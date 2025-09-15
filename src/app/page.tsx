@@ -58,16 +58,37 @@ export default function HomePage() {
 
   const countdown = getCountdown(studyStats.examDate);
 
-  // ✅ クライアント側で session を取得してユーザー設定
+  // ✅ クライアント側で session を取得してユーザー設定 + デバッグ
   useEffect(() => {
     const init = async () => {
       const { data, error } = await supabase.auth.getSession();
-      if (error) return console.error(error);
-      if (!data?.session) return console.warn("未ログイン");
-      setUser(data.session.user);
-      await fetchTodos(data.session.user.id);
+      console.log("getSession result:", data); // デバッグ出力
+      if (error) console.error("getSession error:", error);
+      if (!data?.session) {
+        console.warn("未ログイン状態 (getSession)");
+      } else {
+        console.log("ログイン済みユーザー:", data.session.user);
+        setUser(data.session.user);
+        await fetchTodos(data.session.user.id);
+      }
     };
     init();
+
+    // ✅ セッション変更を監視
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event, session);
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // 最新の todo を取得(templateを見て、is_activeかつrepeat_typeが今日と一致)
