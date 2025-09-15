@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["public"]
+}
+
+model profiles {
+  id         String    @id @db.Uuid
+  username   String?   @unique
+  avatarUrl String?
+  examDate  DateTime? @db.Date
+
+  @@map("profiles")
+}
+
+model Plan {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid @map("user_id")
+
+  title     String
+  startDate DateTime  @db.Date @map("start_date")
+  endDate   DateTime? @db.Date @map("end_date")
+
+  color     String?
+  
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+
+  @@map("plans")
+}
+
+model StudyRecord {
+  id        BigInt   @id @default(autoincrement())
+  userId    String   @db.Uuid @map("user_id")
+  studyDate DateTime @db.Date @map("study_date")
+  type      String
+
+  title     String
+  content   String?   // note 用
+  url       String?   // link 用
+  imageUrl  String?   @map("image_url") // image 用
+  author    String?   // book 用
+  pinned    Boolean   @default(false)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @map("updated_at")
+
+  
+
+  @@map("study_records")
+}
+
+model TodoRecord {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @db.Uuid
+  templateId String?      @db.Uuid
+  date       DateTime     @db.Date
+  isDone     Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  title       String?
+
+  template   TodoTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@map("todo_records")
+}
+
+model TodoTemplate {
+  id         String        @id @default(uuid()) @db.Uuid
+  userId     String        @db.Uuid
+  title      String
+  repeatDetail String
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  deactivatedAt DateTime      @default(now())
+
+  records    TodoRecord[]
+
+  @@map("todo_templates")
+}
+
+model StudySession {
+  id           BigInt     @id @default(autoincrement())
+  userId       String
+  studyDate    DateTime
+  studyMinutes Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // auth.users の userId に紐付ける（Supabase Auth の場合）
+  User         User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("study_sessions") // DBテーブル名に合わせる
+}
