@@ -55,6 +55,8 @@ export default function HomePage() {
   const [open, setOpen] = useState(false);
   const [editTodo, setEditTodo] = useState<any | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [weekendTodos, setWeekendTodos] = useState<any[]>([]);
+  const [weekendOpen, setWeekendOpen] = useState(false);
 
   const countdown = getCountdown(studyStats.examDate);
 
@@ -225,6 +227,25 @@ export default function HomePage() {
     } catch (err) {
       console.error("update error:", err);
       alert("更新に失敗しました");
+    }
+  };
+
+  //weekend用Todo取得
+  const fetchWeekendTodos = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("todo_templates")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("repeat_type", "weekend")
+        .eq("is_active", true)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      setWeekendTodos(data || []);
+    } catch (err) {
+      console.error("fetchWeekendTodos error:", err);
+      setWeekendTodos([]);
     }
   };
 
@@ -405,12 +426,50 @@ export default function HomePage() {
           >
             勉強ノートへ
           </Link>
-          <Link
-            href="/weekend"
-            className="inline-block bg-green-500 text-white px-4 py-2 rounded-lg shadow hover:bg-green-600 transition text-center"
+
+          {/* 休日学習プラン モーダル */}
+          <Dialog
+            open={weekendOpen}
+            onOpenChange={(open) => {
+              setWeekendOpen(open);
+              if (open && user?.id) {
+                fetchWeekendTodos(user.id);
+              }
+            }}
           >
-            休日学習プランへ
-          </Link>
+            <DialogTrigger asChild>
+              <Button className="inline-block bg-green-500 text-white px-4 py-2 rounded-lg shadow hover:bg-green-600 transition text-center">
+                休日学習プランへ
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>休日学習プラン</DialogTitle>
+              </DialogHeader>
+              {weekendTodos.length === 0 ? (
+                <p className="text-gray-500">休日用のTodoがありません</p>
+              ) : (
+                <ul className="space-y-2">
+                  {weekendTodos.map((t) => (
+                    <li
+                      key={t.id}
+                      className="p-3 bg-gray-50 rounded shadow-sm flex justify-between"
+                    >
+                      <span>{t.title}</span>
+                      {t.is_active ? (
+                        <span className="text-xs text-green-600 font-semibold">
+                          有効
+                        </span>
+                      ) : (
+                        <span className="text-xs text-red-500">無効</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DialogContent>
+          </Dialog>
+
           <Link
             href="/calender"
             className="inline-block bg-orange-500 text-white px-4 py-2 rounded-lg shadow hover:bg-orange-600 transition text-center"

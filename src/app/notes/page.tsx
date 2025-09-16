@@ -14,9 +14,11 @@ type Record = {
   image_url?: string;
   author?: string;
   pinned: boolean;
+  created_at: string; // Supabase returns ISO string for timestamps
 };
 
 export default function NotesPage() {
+  const [user, setUser] = useState<any>(null);
   const [records, setRecords] = useState<Record[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [newRecord, setNewRecord] = useState({
@@ -28,11 +30,55 @@ export default function NotesPage() {
     author: "",
   });
 
+  // ✅ セッション確認 & ユーザー設定
+  useEffect(() => {
+    const init = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) console.error("getUser error:", error);
+
+      if (data?.user) {
+        console.log("ログイン済み:", data.user);
+        setUser(data.user);
+      } else {
+        console.warn("未ログイン状態");
+      }
+    };
+    init();
+
+    // セッション変更を監視
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event, session);
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  //ノート一覧を取得
   useEffect(() => {
     const fetchRecords = async () => {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.user) {
+        console.error("No session:", sessionError);
+        return;
+      }
+
+      const userId = session.user.id;
+
       const { data, error } = await supabase
         .from("study_records")
         .select("*")
+        .eq("user_id", userId)
         .order("pinned", { ascending: false })
         .order("created_at", { ascending: false });
 
@@ -46,8 +92,18 @@ export default function NotesPage() {
     fetchRecords();
   }, []);
 
+  //ノートを追加
   const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user) {
+      console.error("Not logged in");
+      return;
+    }
+
     const { data, error } = await supabase
       .from("study_records")
       .insert([
@@ -58,6 +114,7 @@ export default function NotesPage() {
           url: newRecord.url,
           image_url: newRecord.image_url,
           author: newRecord.author,
+          user_id: session.user.id,
         },
       ])
       .select()
@@ -191,33 +248,40 @@ export default function NotesPage() {
             {records.map((r) => (
               <li
                 key={r.id}
-                className="relative p-4 bg-gray-100 rounded-lg shadow-sm hover:bg-gray-200"
+                className={`p-4 rounded-lg shadow-sm flex justify-between items-center ${
+                  r.pinned ? "bg-yellow-100" : "bg-gray-100 hover:bg-gray-200"
+                }`}
               >
-                <strong className="block text-lg">{r.title}</strong>
-                {r.type === "note" && <p>{r.content}</p>}
-                {r.type === "link" && (
-                  <a
-                    href={r.url ?? ""}
-                    target="_blank"
-                    className="text-blue-600 underline mt-1 inline-block"
-                  >
-                    {r.url}
-                  </a>
-                )}
-                {r.type === "image" && (
-                  <img
-                    src={r.image_url ?? ""}
-                    alt={r.title}
-                    className="mt-2 rounded-lg"
-                  />
-                )}
-                {r.type === "book" && <p>著者: {r.author}</p>}
-                {/* 右上にピンアイコン配置 */}
+                {/* 左側：テキスト */}
+                <div className="flex-1">
+                  <strong className="block text-lg">{r.title}</strong>
+                  {r.type === "note" && <p>{r.content}</p>}
+                  {r.type === "link" && (
+                    <a
+                      href={r.url ?? ""}
+                      target="_blank"
+                      className="text-blue-600 underline mt-1 inline-block"
+                    >
+                      {r.url}
+                    </a>
+                  )}
+                  {r.type === "image" && (
+                    <img
+                      src={r.image_url ?? ""}
+                      alt={r.title}
+                      className="mt-2 rounded-lg"
+                    />
+                  )}
+                  {r.type === "book" && <p>著者: {r.author}</p>}
+                </div>
+
+                {/* 右端にピンアイコン配置 ピンをクリック→一番上へ*/}
                 <button
                   onClick={async () => {
                     const { error } = await supabase
                       .from("study_records")
                       .update({ pinned: !r.pinned })
+                      .eq("user_id", user.id)
                       .eq("id", r.id);
 
                     if (error) {
@@ -233,10 +297,20 @@ export default function NotesPage() {
                             ? { ...rec, pinned: !rec.pinned }
                             : rec
                         )
-                        .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+                        .sort((a, b) => {
+                          // ピンありは上に
+                          if (a.pinned && !b.pinned) return -1;
+                          if (!a.pinned && b.pinned) return 1;
+
+                          // 両方同じ pinned 状態なら created_at の昇順に戻す
+                          return (
+                            new Date(a.created_at).getTime() -
+                            new Date(b.created_at).getTime()
+                          );
+                        })
                     );
                   }}
-                  className="absolute top-2 right-2 p-2 rounded-full hover:bg-gray-300"
+                  className="ml-4 p-2 rounded-full  hover:bg-gray-300 self-center"
                 >
                   {r.pinned ? (
                     <Pin className="w-5 h-5 text-yellow-600" />

@@ -30,22 +30,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// 日ごとの記録データ
-const dailyRecords: Record<string, { time: string; note: string } | undefined> =
-  {
-    "2025-09-28": {
-      time: "2h",
-      note: "過去問1周目開始、分からないところチェック",
-    },
-    "2025-09-29": { time: "1.5h", note: "数学、公式まとめノート" },
-    "2025-10-01": { time: "3h", note: "過去問演習＋解説確認" },
-  };
-
 export default function CalendarWithPlansAndNotes() {
+  const [user, setUser] = useState<any>(null);
   const [studyPlans, setStudyPlans] = useState<any[]>([]);
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [hours, setHours] = useState(0);
   const [minutes, setMinutes] = useState(0);
+  const [dailyRecords, setDailyRecords] = useState<Record<string, string[]>>(
+    {}
+  );
+
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // モーダル管理
   const [open, setOpen] = useState(false);
@@ -77,8 +72,38 @@ export default function CalendarWithPlansAndNotes() {
     weeks.push(days.slice(i, i + 7));
   }
 
-  // ✅ 追加: 学習時間マッピング用 state
+  // ✅ 学習時間マッピング用 state
   const [dailyStudy, setDailyStudy] = useState<Record<string, number>>({});
+
+  // ✅ セッション確認 & ユーザー設定
+  useEffect(() => {
+    const init = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) console.error("getUser error:", error);
+
+      if (data?.user) {
+        console.log("ログイン済み:", data.user);
+        setUser(data.user);
+      } else {
+        console.warn("未ログイン状態");
+      }
+    };
+    init();
+
+    // セッション変更を監視
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event, session);
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   // ✅ Supabaseから予定を取得
   useEffect(() => {
@@ -124,18 +149,59 @@ export default function CalendarWithPlansAndNotes() {
     fetchStudySessions();
   }, []);
 
+  // ✅ study_records を取得
+  useEffect(() => {
+    const fetchRecords = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        console.error("ログインユーザーなし");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("study_records")
+        .select("*")
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("データ取得失敗:", error);
+      } else {
+        console.log("取得データ:", data);
+      }
+      // 日付ごとにグルーピング
+      const grouped: Record<string, string[]> = {};
+      data.forEach((rec: any) => {
+        const day = format(new Date(rec.created_at), "yyyy-MM-dd");
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push(rec.title);
+      });
+
+      setDailyRecords(grouped);
+    };
+
+    fetchRecords();
+  }, []);
+
+  // ✅ 予定追加
   const handleAddPlan = async () => {
+    if (!user) {
+      alert("ログインしてください");
+      return;
+    }
     if (!newPlan.title || !newPlan.start || !newPlan.end) return;
 
     const { data, error } = await supabase
       .from("plans")
       .insert([
         {
-          user_id: "00000000-0000-0000-0000-000000000000", // 仮ユーザーID
+          user_id: user.id, // ✅ ログインユーザーを利用
           title: newPlan.title,
           start_date: newPlan.start,
           end_date: newPlan.end,
-          color: newPlan.color.replace("bg-", "").replace("-400", ""), // DBには文字列で保存
+          color: newPlan.color.replace("bg-", "").replace("-400", ""),
         },
       ])
       .select();
@@ -163,6 +229,7 @@ export default function CalendarWithPlansAndNotes() {
     setOpen(false);
   };
 
+  //study_sessionに学習時間を追加(日ごと合計を表示するので、1日に複数回ok)
   const handleSaveStudyTime = async () => {
     const totalMinutes = hours * 60 + minutes;
     if (totalMinutes === 0) return;
@@ -173,6 +240,7 @@ export default function CalendarWithPlansAndNotes() {
       .from("study_sessions")
       .insert([
         {
+          user_id: user.id,
           study_date: today,
           study_minutes: totalMinutes,
         },
@@ -199,6 +267,11 @@ export default function CalendarWithPlansAndNotes() {
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-6xl mx-auto bg-white rounded-xl shadow p-6 relative">
+        {/* ✅ ログイン状況の表示 */}
+        <div className="mb-4 text-sm text-gray-600">
+          {user ? `ログイン中: ${user.email}` : "未ログイン"}
+        </div>
+
         {/* ヘッダー */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-center">学習カレンダー</h1>
@@ -329,7 +402,7 @@ export default function CalendarWithPlansAndNotes() {
               <div className="grid grid-cols-7 gap-1 relative z-10">
                 {week.map((day) => {
                   const key = format(day, "yyyy-MM-dd");
-                  const record = dailyRecords[key];
+                  const titles = dailyRecords[key] || [];
 
                   return (
                     <div
@@ -353,7 +426,7 @@ export default function CalendarWithPlansAndNotes() {
                         )}
                       </div>
 
-                      {record?.note && (
+                      {titles?.length > 0 && (
                         <button
                           onClick={() =>
                             setSelectedNote(selectedNote === key ? null : key)
@@ -407,8 +480,12 @@ export default function CalendarWithPlansAndNotes() {
         {/* ノート概要 */}
         {selectedNote && (
           <div className="mt-3 p-3 bg-gray-50 border rounded">
-            <h2 className="font-bold mb-2">{selectedNote} の学習ノート概要</h2>
-            <p className="text-sm">{dailyRecords[selectedNote]?.note}</p>
+            <h2 className="font-bold mb-2">{selectedNote} の記録一覧</h2>
+            <ul className="list-disc list-inside text-sm space-y-1">
+              {dailyRecords[selectedNote]?.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
