@@ -20,14 +20,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-//カウントダウン用
-const studyStats = {
-  weeklyHours: 12.5,
-  streakDays: 5,
-  examDate: new Date("2025-12-01"),
-  totalCompleted: 0,
-  weekdayHours: 40,
-  weekendHours: 12,
+type Profile = {
+  exam_date: string | null;
+};
+
+//学習統計の型
+type StudyStats = {
+  weekly_hours: number;
+  streak_days: number;
+  total_completed: number;
+  weekday_minutes: number;
+  weekend_minutes: number;
 };
 
 // 平日/休日判定
@@ -46,6 +49,9 @@ function getCountdown(targetDate: Date) {
 
 export default function HomePage() {
   const [user, setUser] = useState<any>(null);
+  const [examDate, setExamDate] = useState<Date | null>(null);
+
+  const [studyStats, setStudyStats] = useState<StudyStats | null>(null);
   const [todos, setTodos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState("");
@@ -57,8 +63,6 @@ export default function HomePage() {
   const [editTitle, setEditTitle] = useState("");
   const [weekendTodos, setWeekendTodos] = useState<any[]>([]);
   const [weekendOpen, setWeekendOpen] = useState(false);
-
-  const countdown = getCountdown(studyStats.examDate);
 
   // ✅ クライアント側で session を取得してユーザー設定 + デバッグ
   useEffect(() => {
@@ -93,25 +97,91 @@ export default function HomePage() {
     };
   }, []);
 
-  // 最新の todo を取得(templateを見て、is_activeかつrepeat_typeが今日と一致)
+  // ✅ exam_date を profiles から取得
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const fetchProfile = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("exam_date")
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        console.error("fetchProfile error:", error);
+        return;
+      }
+      if (data?.exam_date) {
+        setExamDate(new Date(data.exam_date));
+      }
+    };
+
+    fetchProfile();
+  }, [user]);
+
+  // ✅ カウントダウン計算
+  const countdown = examDate ? getCountdown(examDate) : 0;
+
+  // useEffectで学習統計を取得
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const fetchStats = async () => {
+      try {
+        // 今週分
+        const { data: weekly } = await supabase
+          .from("weekly_summary")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        // 累計分
+        const { data: total } = await supabase
+          .from("total_summary")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        setStudyStats({
+          weekly_hours: (weekly?.week_total_minutes ?? 0) / 60,
+          streak_days: total?.current_streak_days ?? 0, // ← ✅ streak 日数を格納
+          total_completed: total?.total_completed_todos ?? 0,
+          weekday_minutes: (total?.weekday_minutes ?? 0) / 60,
+          weekend_minutes: (total?.weekend_minutes ?? 0) / 60,
+        });
+      } catch (err) {
+        console.error("fetchStats error:", err);
+      }
+    };
+
+    fetchStats();
+  }, [user]);
+
+  // 最新の todo を取得
   const fetchTodos = async (userId: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from("todo_records")
-        .select("*, todo_templates(*)")
+        .from("todo_progress")
+        .select(
+          `id,
+    template_id,
+    is_done,
+    updated_at,
+    todo_templates(id,title)`
+        )
         .eq("user_id", userId)
-        .order("created_at", { ascending: true });
-
+        .eq("adjusted_date", new Date().toISOString().slice(0, 10)) // 今日分
+        .order("updated_at", { ascending: true });
       if (error) throw error;
+      // title をフラット化
+      const normalized = (data || []).map((d) => ({
+        ...d,
+        title: d.todo_templates?.title ?? "",
+      }));
 
-      const filtered = (data || []).filter(
-        (t) =>
-          t.todo_templates?.is_active &&
-          t.todo_templates?.repeat_type === getDayType()
-      );
-
-      setTodos(filtered);
+      setTodos(normalized);
     } catch (err) {
       console.error("fetchTodos error:", err);
       setTodos([]);
@@ -121,15 +191,30 @@ export default function HomePage() {
   };
 
   // todo完了切替
-  const toggleTodo = async (id: string, current: boolean) => {
+  const toggleTodo = async (todo: any) => {
     if (!user?.id) return;
     try {
-      const { error } = await supabase
-        .from("todo_records")
-        .update({ is_done: !current })
-        .eq("id", id);
+      const newDone = !todo.is_done;
+      const { error: progressError } = await supabase
+        .from("todo_progress")
+        .update({ is_done: newDone, done_at: newDone ? new Date() : null })
+        .eq("id", todo.id);
 
-      if (error) throw error;
+      if (progressError) throw progressError;
+
+      const { error: recordError } = await supabase
+        .from("todo_records")
+        .insert([
+          {
+            user_id: user.id,
+            template_id: todo.template_id,
+            is_done: newDone,
+            title: todo.todo_templates.title,
+          },
+        ]);
+
+      if (recordError) throw recordError;
+
       await fetchTodos(user.id);
     } catch (err) {
       console.error("toggleTodo error:", err);
@@ -145,7 +230,7 @@ export default function HomePage() {
     setLoading(true);
     try {
       // 1. template 作成
-      const { data: templateData } = await supabase
+      const { data: templateData, error: templateError } = await supabase
         .from("todo_templates")
         .insert([
           {
@@ -162,18 +247,25 @@ export default function HomePage() {
         .select()
         .single();
 
-      // 2. 今日に該当するなら record 作成
-      if (repeatType === getDayType()) {
-        await supabase.from("todo_records").insert([
-          {
-            title,
-            template_id: templateData?.id ?? null,
-            is_done: false,
-            user_id: user.id,
-          },
-        ]);
-      }
+      if (templateError) throw templateError;
 
+      // 2. 今日に該当するなら progress も作成
+      if (repeatType === getDayType()) {
+        const today = new Date().toISOString().slice(0, 10);
+
+        const { error: progressError } = await supabase
+          .from("todo_progress")
+          .insert([
+            {
+              template_id: templateData.id,
+              user_id: user.id,
+              adjusted_date: today,
+              is_done: false,
+            },
+          ]);
+
+        if (progressError) throw progressError;
+      }
       await fetchTodos(user.id);
 
       setTitle("");
@@ -207,7 +299,7 @@ export default function HomePage() {
     }
   };
 
-  // 更新
+  // todo編集
   const handleUpdate = async () => {
     if (!user?.id || !editTodo) return;
     try {
@@ -261,7 +353,7 @@ export default function HomePage() {
           <p className="text-sm text-gray-600">試験まで</p>
           <p className="text-3xl font-bold text-yellow-700">{countdown} 日</p>
           <p className="text-sm text-gray-500 mt-1">
-            {studyStats.examDate.toLocaleDateString("ja-JP")}
+            {examDate ? examDate.toLocaleDateString("ja-JP") : "未設定"}
           </p>
         </div>
 
@@ -274,13 +366,13 @@ export default function HomePage() {
                 <div>
                   <p className="text-sm text-gray-600">今週の累計</p>
                   <p className="text-xl font-bold">
-                    {studyStats.weeklyHours} h
+                    {studyStats ? studyStats.weekly_hours.toFixed(1) : 0} h
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">連続日数</p>
                   <p className="text-xl font-bold">
-                    {studyStats.streakDays} 日
+                    {studyStats?.streak_days ?? 0} 日
                   </p>
                 </div>
               </div>
@@ -292,24 +384,38 @@ export default function HomePage() {
             </DialogHeader>
             <div className="space-y-4">
               <p>
-                📅 <span className="font-bold">{studyStats.streakDays}</span>{" "}
+                📅{" "}
+                <span className="font-bold">
+                  {studyStats?.streak_days ?? 0}
+                </span>{" "}
                 日連続で学習中
               </p>
               <p>
                 ⏳ 今週の累計学習時間:{" "}
-                <span className="font-bold">{studyStats.weeklyHours} h</span>
+                <span className="font-bold">
+                  {" "}
+                  {studyStats ? studyStats.weekly_hours.toFixed(1) : 0} h
+                </span>
               </p>
               <p>
                 ✅ 完了したタスク数:{" "}
-                <span className="font-bold">{studyStats.totalCompleted}</span>
+                <span className="font-bold">
+                  {" "}
+                  {studyStats?.total_completed ?? 0}
+                </span>
               </p>
               <p>
                 🏫 平日勉強時間累計:{" "}
-                <span className="font-bold">{studyStats.weekdayHours} h</span>
+                <span className="font-bold">
+                  {" "}
+                  {studyStats ? studyStats.weekday_minutes.toFixed(1) : 0} h
+                </span>
               </p>
               <p>
                 🎉 休日勉強時間累計:{" "}
-                <span className="font-bold">{studyStats.weekendHours} h</span>
+                <span className="font-bold">
+                  {studyStats ? studyStats.weekend_minutes.toFixed(1) : 0} h
+                </span>
               </p>
             </div>
           </DialogContent>
@@ -336,7 +442,7 @@ export default function HomePage() {
                     type="checkbox"
                     checked={todo.is_done}
                     readOnly
-                    onClick={() => toggleTodo(todo.id, todo.is_done)}
+                    onClick={() => toggleTodo(todo)}
                     className="w-5 h-5 cursor-pointer"
                   />
                   <span>{todo.title}</span>
