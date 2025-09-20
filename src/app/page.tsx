@@ -47,6 +47,13 @@ function getCountdown(targetDate: Date) {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
+// ユーザーごとの adjusted_date を計算する関数
+function getAdjustedDate(dayRolloverHour: number): string {
+  const now = new Date();
+  const adjusted = new Date(now.getTime() - dayRolloverHour * 60 * 60 * 1000);
+  return adjusted.toISOString().slice(0, 10);
+}
+
 export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [examDate, setExamDate] = useState<Date | null>(null);
@@ -158,10 +165,110 @@ export default function HomePage() {
     fetchStats();
   }, [user]);
 
+  // progress の rollover 処理
+  const rolloverProgress = async (userId: string, rolloverHour: number) => {
+    const today = getAdjustedDate(rolloverHour);
+    const dayType = getDayType(); // "weekdays" or "weekend"
+
+    // 直近の progress を取得
+    const { data: oldProgress, error } = await supabase
+      .from("todo_progress")
+      .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
+      .eq("user_id", userId)
+      .lt("adjusted_date", today); // 昨日以前
+
+    // 今日の progress で dayType と違うものも削除
+    const { data: templates } = await supabase
+      .from("todo_templates")
+      .select("id, repeat_type")
+      .eq("user_id", userId);
+
+    if (templates) {
+      const invalidTemplateIds = templates
+        .filter((t) => t.repeat_type !== dayType)
+        .map((t) => t.id);
+
+      if (invalidTemplateIds.length > 0) {
+        await supabase
+          .from("todo_progress")
+          .delete()
+          .eq("user_id", userId)
+          .eq("adjusted_date", today)
+          .in("template_id", invalidTemplateIds);
+      }
+    }
+    //昨日以前のpogressの処理
+    if (oldProgress && oldProgress.length > 0) {
+      // 未完了のものを records に保存
+      const unfinished = oldProgress.filter((p) => !p.is_done);
+      if (unfinished.length > 0) {
+        const insertRows = unfinished.map((p) => ({
+          user_id: userId,
+          template_id: p.template_id,
+          is_done: false,
+          title: p.todo_templates?.title ?? "",
+        }));
+        await supabase.from("todo_records").insert(insertRows);
+      }
+
+      // 古い progress を削除
+      await supabase
+        .from("todo_progress")
+        .delete()
+        .eq("user_id", userId)
+        .lt("adjusted_date", today);
+    }
+  };
+
   // 最新の todo を取得
   const fetchTodos = async (userId: string) => {
     setLoading(true);
     try {
+      // 1. ユーザーの rolloverHour を取得
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("day_rollover_hour")
+        .eq("id", userId)
+        .single();
+
+      const rolloverHour = profile?.day_rollover_hour ?? 3; // デフォルト3時
+      const today = getAdjustedDate(rolloverHour);
+
+      // ✅ rollover 処理
+      await rolloverProgress(userId, rolloverHour);
+
+      // ✅ 今日の progress がなければ template から生成
+      const { data: existing } = await supabase
+        .from("todo_progress")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("adjusted_date", today);
+
+      if (!existing || existing.length === 0) {
+        const { data: templates } = await supabase
+          .from("todo_templates")
+          .select("id, title, repeat_type, is_active")
+          .eq("user_id", userId)
+          .eq("is_active", true);
+
+        if (templates) {
+          const dayType = getDayType();
+          const insertRows = templates
+            .filter((t) => t.repeat_type === dayType)
+            .map((t) => ({
+              user_id: userId,
+              template_id: t.id,
+              adjusted_date: today,
+              is_done: false,
+            }));
+
+          if (insertRows.length > 0) {
+            await supabase.from("todo_progress").insert(insertRows);
+          }
+        }
+      }
+
+      // 2. 今日の todo_progress を取得
       const { data, error } = await supabase
         .from("todo_progress")
         .select(
@@ -172,9 +279,12 @@ export default function HomePage() {
     todo_templates(id,title)`
         )
         .eq("user_id", userId)
-        .eq("adjusted_date", new Date().toISOString().slice(0, 10)) // 今日分
+        .eq("adjusted_date", today) // 今日分
         .order("updated_at", { ascending: true });
+
       if (error) throw error;
+      console.log(data);
+
       // title をフラット化
       const normalized = (data || []).map((d) => ({
         ...d,
