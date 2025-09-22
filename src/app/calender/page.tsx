@@ -39,6 +39,8 @@ export default function CalendarWithPlansAndNotes() {
   const [dailyRecords, setDailyRecords] = useState<Record<string, string[]>>(
     {}
   );
+  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -378,6 +380,128 @@ export default function CalendarWithPlansAndNotes() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* 編集モーダル */}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>予定を編集</DialogTitle>
+              </DialogHeader>
+              {selectedPlan && (
+                <div className="space-y-3">
+                  <Input
+                    value={selectedPlan.title}
+                    onChange={(e) =>
+                      setSelectedPlan({
+                        ...selectedPlan,
+                        title: e.target.value,
+                      })
+                    }
+                  />
+                  <Input
+                    type="date"
+                    value={format(selectedPlan.start, "yyyy-MM-dd")}
+                    onChange={(e) =>
+                      setSelectedPlan({
+                        ...selectedPlan,
+                        start: new Date(e.target.value),
+                      })
+                    }
+                  />
+                  <Input
+                    type="date"
+                    value={format(selectedPlan.end, "yyyy-MM-dd")}
+                    onChange={(e) =>
+                      setSelectedPlan({
+                        ...selectedPlan,
+                        end: new Date(e.target.value),
+                      })
+                    }
+                  />
+
+                  {/* 色選択 */}
+                  <Select
+                    value={selectedPlan.color}
+                    onValueChange={(v) =>
+                      setSelectedPlan({ ...selectedPlan, color: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="色を選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bg-purple-400">紫</SelectItem>
+                      <SelectItem value="bg-blue-400">青</SelectItem>
+                      <SelectItem value="bg-green-400">緑</SelectItem>
+                      <SelectItem value="bg-red-400">赤</SelectItem>
+                      <SelectItem value="bg-yellow-400">黄</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* ボタン群 */}
+                  <div className="flex justify-between mt-4">
+                    <Button
+                      variant="destructive"
+                      onClick={async () => {
+                        const { error } = await supabase
+                          .from("plans")
+                          .delete()
+                          .eq("id", selectedPlan.id)
+                          .eq("user_id", user.id);
+
+                        if (error) {
+                          console.error("削除失敗:", error.message);
+                          return;
+                        }
+
+                        setStudyPlans((prev) =>
+                          prev.filter((p) => p.id !== selectedPlan.id)
+                        );
+                        setEditOpen(false);
+                      }}
+                    >
+                      削除
+                    </Button>
+
+                    <Button
+                      onClick={async () => {
+                        const { error } = await supabase
+                          .from("plans")
+                          .update({
+                            title: selectedPlan.title,
+                            start_date: format(
+                              selectedPlan.start,
+                              "yyyy-MM-dd"
+                            ),
+                            end_date: format(selectedPlan.end, "yyyy-MM-dd"),
+                            color: selectedPlan.color
+                              .replace("bg-", "")
+                              .replace("-400", ""),
+                          })
+                          .eq("id", selectedPlan.id)
+                          .eq("user_id", user.id);
+
+                        if (error) {
+                          console.error("更新失敗:", error.message);
+                          return;
+                        }
+
+                        // state 更新
+                        setStudyPlans((prev) =>
+                          prev.map((p) =>
+                            p.id === selectedPlan.id ? selectedPlan : p
+                          )
+                        );
+                        setEditOpen(false);
+                      }}
+                    >
+                      保存
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* 曜日ヘッダー */}
@@ -442,7 +566,7 @@ export default function CalendarWithPlansAndNotes() {
               </div>
 
               {/* バーレイヤー */}
-              <div className="grid grid-cols-7 gap-1 absolute inset-0 z-20 pointer-events-none">
+              <div className="grid grid-cols-7 gap-1 absolute inset-0 z-20 pointer-events-auto">
                 {weekPlans.map((plan, pi) => {
                   const barStart =
                     plan.start > weekStart ? plan.start : weekStart;
@@ -460,7 +584,11 @@ export default function CalendarWithPlansAndNotes() {
                   return (
                     <div
                       key={pi}
-                      className={`${plan.color} bg-opacity-60 h-6 rounded-md text-xs text-white flex items-center px-1`}
+                      onClick={() => {
+                        setSelectedPlan(plan);
+                        setEditOpen(true);
+                      }}
+                      className={`${plan.color} bg-opacity-60 h-6 rounded-md text-xs text-white flex items-center px-1 cursor-pointer`}
                       style={{
                         gridColumnStart: startIndex + 1,
                         gridColumnEnd: endIndex + 2,

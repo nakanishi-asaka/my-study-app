@@ -136,12 +136,16 @@ export default function HomePage() {
 
     const fetchStats = async () => {
       try {
-        // 今週分
-        const { data: weekly } = await supabase
+        // 今週分(存在しない場合あり)
+        const { data: weekly, error } = await supabase
           .from("weekly_summary")
           .select("*")
           .eq("user_id", user.id)
-          .single();
+          .maybeSingle();
+
+        if (error) {
+          console.error("weekly_summary error:", error);
+        }
 
         // 累計分
         const { data: total } = await supabase
@@ -170,12 +174,33 @@ export default function HomePage() {
     const today = getAdjustedDate(rolloverHour);
     const dayType = getDayType(); // "weekdays" or "weekend"
 
-    // 直近の progress を取得
-    const { data: oldProgress, error } = await supabase
+    // 昨日以前の progress を取得
+    const { data: oldProgress } = await supabase
       .from("todo_progress")
       .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
       .eq("user_id", userId)
       .lt("adjusted_date", today); // 昨日以前
+
+    if (oldProgress && oldProgress.length > 0) {
+      // 未完了だけ records に保存
+      const unfinished = oldProgress.filter((p) => !p.is_done);
+      if (unfinished.length > 0) {
+        const insertRows = unfinished.map((p) => ({
+          user_id: userId,
+          template_id: p.template_id,
+          is_done: false,
+          title: p.todo_templates?.title ?? "",
+        }));
+        await supabase.from("todo_records").insert(insertRows);
+      }
+
+      // 古い progress を削除
+      await supabase
+        .from("todo_progress")
+        .delete()
+        .eq("user_id", userId)
+        .lt("adjusted_date", today);
+    }
 
     // 今日の progress で dayType と違うものも削除
     const { data: templates } = await supabase
@@ -197,27 +222,6 @@ export default function HomePage() {
           .in("template_id", invalidTemplateIds);
       }
     }
-    //昨日以前のpogressの処理
-    if (oldProgress && oldProgress.length > 0) {
-      // 未完了のものを records に保存
-      const unfinished = oldProgress.filter((p) => !p.is_done);
-      if (unfinished.length > 0) {
-        const insertRows = unfinished.map((p) => ({
-          user_id: userId,
-          template_id: p.template_id,
-          is_done: false,
-          title: p.todo_templates?.title ?? "",
-        }));
-        await supabase.from("todo_records").insert(insertRows);
-      }
-
-      // 古い progress を削除
-      await supabase
-        .from("todo_progress")
-        .delete()
-        .eq("user_id", userId)
-        .lt("adjusted_date", today);
-    }
   };
 
   // 最新の todo を取得
@@ -237,53 +241,86 @@ export default function HomePage() {
       // ✅ rollover 処理
       await rolloverProgress(userId, rolloverHour);
 
-      // ✅ 今日の progress がなければ template から生成
+      // 今日の progress を取得
       const { data: existing } = await supabase
         .from("todo_progress")
-        .select("id")
+        .select("id, template_id, is_done")
         .eq("user_id", userId)
         .eq("adjusted_date", today);
 
-      if (!existing || existing.length === 0) {
-        const { data: templates } = await supabase
-          .from("todo_templates")
-          .select("id, title, repeat_type, is_active")
-          .eq("user_id", userId)
-          .eq("is_active", true);
+      // ✅ 今日の templateを取得
+      const { data: templates } = await supabase
+        .from("todo_templates")
+        .select("id, title, repeat_type, is_active")
+        .eq("user_id", userId);
 
-        if (templates) {
-          const dayType = getDayType();
-          const insertRows = templates
-            .filter((t) => t.repeat_type === dayType)
-            .map((t) => ({
+      const dayType = getDayType();
+
+      if (templates) {
+        const validTemplates = templates.filter(
+          (t) => t.repeat_type === dayType && t.is_active
+        );
+
+        if (!existing || existing.length === 0) {
+          // progress が無ければ新規生成（リセット）
+          const insertRows = validTemplates.map((t) => ({
+            user_id: userId,
+            template_id: t.id,
+            adjusted_date: today,
+            is_done: false,
+          }));
+          if (insertRows.length > 0) {
+            await supabase.from("todo_progress").upsert(insertRows, {
+              onConflict: "user_id,template_id,adjusted_date",
+            });
+          }
+        } else {
+          // progress がある場合 → 差分調整
+          const existingIds = existing.map((e) => e.template_id);
+          const validIds = validTemplates.map((t) => t.id);
+
+          // is_active=false or repeat_type不一致 の progress を削除
+          const toDelete = existingIds.filter((id) => !validIds.includes(id));
+          if (toDelete.length > 0) {
+            await supabase
+              .from("todo_progress")
+              .delete()
+              .eq("user_id", userId)
+              .eq("adjusted_date", today)
+              .in("template_id", toDelete);
+          }
+
+          // 新しい template を追加
+          const toAdd = validTemplates.filter(
+            (t) => !existingIds.includes(t.id)
+          );
+          if (toAdd.length > 0) {
+            const insertRows = toAdd.map((t) => ({
               user_id: userId,
               template_id: t.id,
               adjusted_date: today,
               is_done: false,
             }));
-
-          if (insertRows.length > 0) {
             await supabase.from("todo_progress").insert(insertRows);
           }
         }
       }
 
-      // 2. 今日の todo_progress を取得
+      // 今日の progress を再取得
       const { data, error } = await supabase
         .from("todo_progress")
         .select(
           `id,
-    template_id,
-    is_done,
-    updated_at,
-    todo_templates(id,title)`
+         template_id,
+         is_done,
+         updated_at,
+         todo_templates(id,title)`
         )
         .eq("user_id", userId)
-        .eq("adjusted_date", today) // 今日分
+        .eq("adjusted_date", today)
         .order("updated_at", { ascending: true });
 
       if (error) throw error;
-      console.log(data);
 
       // title をフラット化
       const normalized = (data || []).map((d) => ({
@@ -402,6 +439,13 @@ export default function HomePage() {
             deactivated_at: new Date().toISOString().slice(0, 10),
           })
           .eq("id", templateId);
+
+        // progress を削除
+        await supabase
+          .from("todo_progress")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("template_id", templateId);
       }
       await fetchTodos(user.id);
     } catch (err) {
