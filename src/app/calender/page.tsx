@@ -531,42 +531,49 @@ export default function CalendarWithPlansAndNotes() {
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`h-24 border rounded-lg p-1 text-xs relative flex flex-col
+                      className={`h-32 border rounded-lg p-1 text-xs flex flex-col justify-between
                         ${
                           day.getMonth() === month.getMonth()
                             ? "bg-gray-50"
                             : "bg-gray-100 text-gray-400"
                         }`}
                     >
-                      <div className="flex justify-between items-start">
-                        <span className="font-semibold">
-                          {format(day, "d")}
-                        </span>
-                        {dailyStudy[key] && (
-                          <span className="text-green-600 font-medium text-[15px]">
-                            {Math.floor(dailyStudy[key] / 60)}h{" "}
-                            {dailyStudy[key] % 60}m
+                      {/* 上部: 日付と時間 */}
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <span className="font-semibold">
+                            {format(day, "d")}
                           </span>
+                          {dailyStudy[key] && (
+                            <span className="text-green-600 font-medium text-[15px]">
+                              {Math.floor(dailyStudy[key] / 60)}h{" "}
+                              {dailyStudy[key] % 60}m
+                            </span>
+                          )}
+                        </div>
+
+                        {/* ノートアイコン */}
+                        {titles?.length > 0 && (
+                          <button
+                            onClick={() =>
+                              setSelectedNote(selectedNote === key ? null : key)
+                            }
+                            className="mt-1 text-gray-500 hover:text-gray-800 self-start z-30 relative"
+                          >
+                            <BookOpen size={20} />
+                          </button>
                         )}
                       </div>
 
-                      {titles?.length > 0 && (
-                        <button
-                          onClick={() =>
-                            setSelectedNote(selectedNote === key ? null : key)
-                          }
-                          className="mt-1 text-gray-500 hover:text-gray-800 self-start"
-                        >
-                          <BookOpen size={20} />
-                        </button>
-                      )}
+                      {/* 下部: バーを差し込むスペース */}
+                      <div className="relative h-6 w-full"></div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* バーレイヤー */}
-              <div className="grid grid-cols-7 gap-1 absolute inset-0 z-20 pointer-events-auto">
+              {/* バーをまとめて週全体で表示 */}
+              <div className="absolute bottom-1 inset-x-0 grid grid-cols-7 gap-1 z-20 pointer-events-none">
                 {weekPlans.map((plan, pi) => {
                   const barStart =
                     plan.start > weekStart ? plan.start : weekStart;
@@ -588,12 +595,11 @@ export default function CalendarWithPlansAndNotes() {
                         setSelectedPlan(plan);
                         setEditOpen(true);
                       }}
-                      className={`${plan.color} bg-opacity-60 h-6 rounded-md text-xs text-white flex items-center px-1 cursor-pointer`}
+                      className={`${plan.color} bg-opacity-60 h-5 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
                       style={{
                         gridColumnStart: startIndex + 1,
                         gridColumnEnd: endIndex + 2,
-                        alignSelf: "end",
-                        marginBottom: "2px",
+                        marginTop: `${pi * 6}px`,
                       }}
                     >
                       {plan.start >= weekStart ? plan.title : ""}

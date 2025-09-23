@@ -11,7 +11,8 @@ type Record = {
   title: string;
   content?: string;
   url?: string;
-  image_url?: string;
+  image_path?: string;
+  image_signed_url?: string;
   author?: string;
   pinned: boolean;
   created_at: string; // Supabase returns ISO string for timestamps
@@ -65,13 +66,9 @@ export default function NotesPage() {
     const fetchRecords = async () => {
       const {
         data: { session },
-        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (sessionError || !session?.user) {
-        console.error("No session:", sessionError);
-        return;
-      }
+      if (!session?.user) return;
 
       const userId = session.user.id;
 
@@ -84,9 +81,22 @@ export default function NotesPage() {
 
       if (error) {
         console.error("Fetch error:", error.message);
-      } else {
-        setRecords(data as Record[]);
       }
+
+      // ✅ 画像の signedUrl を発行
+      const recordsWithUrls = await Promise.all(
+        (data ?? []).map(async (r: any) => {
+          if (r.type === "image" && r.image_url) {
+            const { data: urlData } = await supabase.storage
+              .from("record_images")
+              .createSignedUrl(r.image_url, 60 * 60); // 1時間有効
+            return { ...r, image_signed_url: urlData?.signedUrl };
+          }
+          return r;
+        })
+      );
+
+      setRecords(recordsWithUrls as Record[]);
     };
 
     fetchRecords();
@@ -104,6 +114,23 @@ export default function NotesPage() {
       return;
     }
 
+    let imageUrl = "";
+    if (newRecord.type === "image" && newRecord.image_url instanceof File) {
+      const file = newRecord.image_url;
+      const filePath = `${session.user.id}/${Date.now()}-${file.name}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("record_images") // ← ストレージバケット名（作成しておく）
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError.message);
+        return;
+      }
+
+      imageUrl = filePath;
+    }
+
     const { data, error } = await supabase
       .from("study_records")
       .insert([
@@ -112,7 +139,7 @@ export default function NotesPage() {
           title: newRecord.title,
           content: newRecord.content,
           url: newRecord.url,
-          image_url: newRecord.image_url,
+          image_url: imageUrl,
           author: newRecord.author,
           user_id: session.user.id,
         },
@@ -212,11 +239,16 @@ export default function NotesPage() {
 
             {newRecord.type === "image" && (
               <input
-                type="url"
-                value={newRecord.image_url}
-                onChange={(e) =>
-                  setNewRecord({ ...newRecord, image_url: e.target.value })
-                }
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    setNewRecord({
+                      ...newRecord,
+                      image_url: e.target.files[0] as any,
+                    });
+                  }
+                }}
                 className="mt-1 w-full border rounded px-2 py-1"
               />
             )}
@@ -265,12 +297,19 @@ export default function NotesPage() {
                       {r.url}
                     </a>
                   )}
-                  {r.type === "image" && (
-                    <img
-                      src={r.image_url ?? ""}
-                      alt={r.title}
-                      className="mt-2 rounded-lg"
-                    />
+                  {r.type === "image" && r.image_signed_url && (
+                    <a
+                      href={r.image_signed_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block mt-2"
+                    >
+                      <img
+                        src={r.image_signed_url}
+                        alt={r.title}
+                        className="mt-2 w-24 h-24 object-cover rounded-lg cursor-pointer border hover:opacity-80"
+                      />
+                    </a>
                   )}
                   {r.type === "book" && <p>著者: {r.author}</p>}
                 </div>

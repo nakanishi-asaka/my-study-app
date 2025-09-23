@@ -738,6 +738,37 @@ export default function HomePage() {
           >
             カレンダーへ
           </Link>
+
+          {/* プロフィールページ */}
+          <Link
+            href="/profile"
+            className="inline-block bg-purple-500 text-white px-4 py-2 rounded-lg shadow hover:bg-purple-600 transition text-center"
+          >
+            プロフィール
+          </Link>
+
+          {/* ログインページ */}
+          {!user && (
+            <Link
+              href="/login"
+              className="inline-block bg-gray-500 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-600 transition text-center"
+            >
+              ログイン
+            </Link>
+          )}
+
+          {/* ログアウト */}
+          {user && (
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                window.location.href = "/login"; // ログインページへ戻す
+              }}
+              className="inline-block bg-red-500 text-white px-4 py-2 rounded-lg shadow hover:bg-red-600 transition text-center"
+            >
+              ログアウト
+            </button>
+          )}
         </div>
       </div>
     </div>

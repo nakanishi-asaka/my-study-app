@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../supabaseClient";
 
-export default function AuthPage() {
+export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -31,14 +31,8 @@ export default function AuthPage() {
     } else {
       setMessage("ログイン成功!");
       console.log("ログイン成功:", data);
-      router.push("/");
+      router.push("/"); // ホームへリダイレクト
     }
-  };
-
-  // ログアウト
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setMessage("ログアウトしました");
   };
 
   return (
@@ -71,12 +65,6 @@ export default function AuthPage() {
           className="bg-green-500 text-white px-4 py-2 rounded"
         >
           ログイン
-        </button>
-        <button
-          onClick={handleSignOut}
-          className="bg-gray-500 text-white px-4 py-2 rounded"
-        >
-          ログアウト
         </button>
       </div>
 
