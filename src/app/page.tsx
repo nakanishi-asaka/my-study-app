@@ -180,6 +180,7 @@ export default function HomePage() {
       .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
       .eq("user_id", userId)
       .lt("adjusted_date", today); // 昨日以前
+    console.log("oldProgress:", oldProgress);
 
     if (oldProgress && oldProgress.length > 0) {
       // 未完了だけ records に保存
@@ -192,6 +193,7 @@ export default function HomePage() {
           title: p.todo_templates?.title ?? "",
         }));
         await supabase.from("todo_records").insert(insertRows);
+        console.log("unfinished:", unfinished);
       }
 
       // 古い progress を削除

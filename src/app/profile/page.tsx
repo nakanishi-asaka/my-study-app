@@ -95,6 +95,30 @@ export default function ProfilePage() {
       // （簡易実装）ファイルを Supabase Storage にアップロードする場合はここで処理追加
       // 例: supabase.storage.from("avatars").upload(`public/${user.id}.png`, avatarFile)
 
+      // ✅ ファイルが選ばれていたら Storage にアップロード
+      if (avatarFile) {
+        const fileExt = avatarFile.name.split(".").pop();
+        const filePath = `${userId}/avatar.${fileExt}`;
+
+        // 上書き保存 (既存があれば置き換え)
+        const { error: uploadError } = await supabase.storage
+          .from("avatar_url")
+          .upload(filePath, avatarFile, {
+            upsert: true,
+            metadata: { user_id: userId },
+          });
+
+        if (uploadError) throw uploadError;
+
+        // 公開URLを取得
+        const { data: urlData } = supabase.storage
+          .from("avatar_url")
+          .getPublicUrl(filePath);
+
+        avatarUrl = urlData.publicUrl;
+      }
+
+      //dbに保存
       const { error } = await supabase.from("profiles").upsert(
         {
           id: userId, // user.id = auth.users のUUID
