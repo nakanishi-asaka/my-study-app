@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { supabase } from "../supabaseClient";
-import { Pin, PinOff } from "lucide-react";
+import { supabase } from "../../supabaseClient";
+import { Pin, PinOff, X } from "lucide-react";
 
 type Record = {
   id: number;
@@ -21,7 +21,11 @@ type Record = {
 export default function NotesPage() {
   const [user, setUser] = useState<any>(null);
   const [records, setRecords] = useState<Record[]>([]);
+  const [searchTerm, setSearchTerm] = useState(""); // 🔍 検索キーワード
+  const [sortKey, setSortKey] = useState<"created_at" | "title">("created_at"); // ↕️ ソート対象
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // 並
   const [showForm, setShowForm] = useState(false);
+  const [modalImage, setModalImage] = useState<string | null>(null);
   const [newRecord, setNewRecord] = useState({
     type: "note",
     title: "",
@@ -50,7 +54,6 @@ export default function NotesPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event, session);
       if (session?.user) {
         setUser(session.user);
       } else {
@@ -102,6 +105,34 @@ export default function NotesPage() {
     fetchRecords();
   }, []);
 
+  // 🔍 検索 & ソート適用(pinnedは除外)
+  const pinnedRecords = records.filter((r) => r.pinned);
+  const notPinnedRecords = records
+    .filter((r) => !r.pinned)
+    .filter((r) => {
+      const term = searchTerm.toLowerCase();
+      return (
+        r.title.toLowerCase().includes(term) ||
+        (r.content?.toLowerCase().includes(term) ?? false) ||
+        (r.url?.toLowerCase().includes(term) ?? false) ||
+        (r.author?.toLowerCase().includes(term) ?? false)
+      );
+    })
+    .sort((a, b) => {
+      if (sortKey === "created_at") {
+        const t1 = new Date(a.created_at).getTime();
+        const t2 = new Date(b.created_at).getTime();
+        return sortOrder === "asc" ? t1 - t2 : t2 - t1;
+      } else if (sortKey === "title") {
+        return sortOrder === "asc"
+          ? a.title.localeCompare(b.title)
+          : b.title.localeCompare(a.title);
+      }
+      return 0;
+    });
+
+  const filteredRecords = [...pinnedRecords, ...notPinnedRecords];
+
   //ノートを追加
   const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +148,12 @@ export default function NotesPage() {
     let imageUrl = "";
     if (newRecord.type === "image" && newRecord.image_url instanceof File) {
       const file = newRecord.image_url;
-      const filePath = `${session.user.id}/${Date.now()}-${file.name}`;
+
+      // ファイル名をエンコード or 英数字のみに変換
+      const safeFileName = file.name
+        .replace(/\s+/g, "_") // スペースをアンダースコアに
+        .replace(/[^\w.-]/g, ""); // 日本語や記号を除去
+      const filePath = `${session.user.id}/${Date.now()}-${safeFileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("record_images") // ← ストレージバケット名（作成しておく）
@@ -170,6 +206,33 @@ export default function NotesPage() {
     <div className="min-h-screen bg-gray-50 p-6 flex justify-center">
       <div className="w-full max-w-3xl bg-white shadow-lg rounded-xl p-8">
         <h1 className="text-2xl font-bold mb-6 text-center">学習記録</h1>
+
+        {/* 🔍 検索 & ソート UI */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <input
+            type="text"
+            placeholder="検索 (タイトル・内容・著者など)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 border rounded px-3 py-2"
+          />
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as any)}
+            className="border rounded px-2 py-2"
+          >
+            <option value="created_at">作成日</option>
+            <option value="title">タイトル</option>
+          </select>
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as any)}
+            className="border rounded px-2 py-2"
+          >
+            <option value="desc">降順</option>
+            <option value="asc">昇順</option>
+          </select>
+        </div>
 
         {/* 追加ボタン */}
         <div className="text-center mb-6">
@@ -277,7 +340,7 @@ export default function NotesPage() {
         <section>
           <h2 className="text-xl font-semibold mb-4">📚 記録一覧</h2>
           <ul className="space-y-4">
-            {records.map((r) => (
+            {filteredRecords.map((r) => (
               <li
                 key={r.id}
                 className={`p-4 rounded-lg shadow-sm flex justify-between items-center ${
@@ -298,18 +361,12 @@ export default function NotesPage() {
                     </a>
                   )}
                   {r.type === "image" && r.image_signed_url && (
-                    <a
-                      href={r.image_signed_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block mt-2"
-                    >
-                      <img
-                        src={r.image_signed_url}
-                        alt={r.title}
-                        className="mt-2 w-24 h-24 object-cover rounded-lg cursor-pointer border hover:opacity-80"
-                      />
-                    </a>
+                    <img
+                      src={r.image_signed_url}
+                      alt={r.title}
+                      className="mt-2 w-24 h-24 object-cover rounded-lg cursor-pointer border hover:opacity-80"
+                      onClick={() => setModalImage(r.image_signed_url)} // ← モーダル開く
+                    />
                   )}
                   {r.type === "book" && <p>著者: {r.author}</p>}
                 </div>
@@ -361,6 +418,25 @@ export default function NotesPage() {
             ))}
           </ul>
         </section>
+
+        {/* 画像モーダル */}
+        {modalImage && (
+          <div className="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center">
+            <div className="relative max-w-3xl max-h-[80vh]">
+              <button
+                className="absolute top-2 right-2 bg-white rounded-full p-2 shadow hover:bg-gray-200"
+                onClick={() => setModalImage(null)}
+              >
+                <X className="w-6 h-6 text-gray-800" />
+              </button>
+              <img
+                src={modalImage}
+                alt="拡大画像"
+                className="rounded-lg max-h-[80vh] object-contain"
+              />
+            </div>
+          </div>
+        )}
 
         {/* ホームへ戻る */}
         <div className="text-center mt-10">

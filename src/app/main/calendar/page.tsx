@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../supabaseClient";
 import {
   addDays,
   format,
@@ -43,6 +43,7 @@ export default function CalendarWithPlansAndNotes() {
   const [editOpen, setEditOpen] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // モーダル管理
   const [open, setOpen] = useState(false);
@@ -170,8 +171,6 @@ export default function CalendarWithPlansAndNotes() {
 
       if (error) {
         console.error("データ取得失敗:", error);
-      } else {
-        console.log("取得データ:", data);
       }
       // 日付ごとにグルーピング
       const grouped: Record<string, string[]> = {};
@@ -438,66 +437,87 @@ export default function CalendarWithPlansAndNotes() {
                     </SelectContent>
                   </Select>
 
-                  {/* ボタン群 */}
-                  <div className="flex justify-between mt-4">
-                    <Button
-                      variant="destructive"
-                      onClick={async () => {
-                        const { error } = await supabase
-                          .from("plans")
-                          .delete()
-                          .eq("id", selectedPlan.id)
-                          .eq("user_id", user.id);
+                  {/* 削除確認用 state */}
+                  {confirmDelete ? (
+                    <div className="space-y-3">
+                      <p className="text-red-600 font-semibold">
+                        本当に削除しますか？
+                      </p>
+                      <div className="flex justify-between">
+                        <Button
+                          variant="outline"
+                          onClick={() => setConfirmDelete(false)}
+                        >
+                          キャンセル
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={async () => {
+                            const { error } = await supabase
+                              .from("plans")
+                              .delete()
+                              .eq("id", selectedPlan.id)
+                              .eq("user_id", user.id);
 
-                        if (error) {
-                          console.error("削除失敗:", error.message);
-                          return;
-                        }
+                            if (error) {
+                              console.error("削除失敗:", error.message);
+                              return;
+                            }
 
-                        setStudyPlans((prev) =>
-                          prev.filter((p) => p.id !== selectedPlan.id)
-                        );
-                        setEditOpen(false);
-                      }}
-                    >
-                      削除
-                    </Button>
+                            setStudyPlans((prev) =>
+                              prev.filter((p) => p.id !== selectedPlan.id)
+                            );
+                            setEditOpen(false);
+                            setConfirmDelete(false);
+                          }}
+                        >
+                          削除する
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between mt-4">
+                      <Button
+                        variant="destructive"
+                        onClick={() => setConfirmDelete(true)}
+                      >
+                        削除
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          const { error } = await supabase
+                            .from("plans")
+                            .update({
+                              title: selectedPlan.title,
+                              start_date: format(
+                                selectedPlan.start,
+                                "yyyy-MM-dd"
+                              ),
+                              end_date: format(selectedPlan.end, "yyyy-MM-dd"),
+                              color: selectedPlan.color
+                                .replace("bg-", "")
+                                .replace("-400", ""),
+                            })
+                            .eq("id", selectedPlan.id)
+                            .eq("user_id", user.id);
 
-                    <Button
-                      onClick={async () => {
-                        const { error } = await supabase
-                          .from("plans")
-                          .update({
-                            title: selectedPlan.title,
-                            start_date: format(
-                              selectedPlan.start,
-                              "yyyy-MM-dd"
-                            ),
-                            end_date: format(selectedPlan.end, "yyyy-MM-dd"),
-                            color: selectedPlan.color
-                              .replace("bg-", "")
-                              .replace("-400", ""),
-                          })
-                          .eq("id", selectedPlan.id)
-                          .eq("user_id", user.id);
+                          if (error) {
+                            console.error("更新失敗:", error.message);
+                            return;
+                          }
 
-                        if (error) {
-                          console.error("更新失敗:", error.message);
-                          return;
-                        }
-
-                        // state 更新
-                        setStudyPlans((prev) =>
-                          prev.map((p) =>
-                            p.id === selectedPlan.id ? selectedPlan : p
-                          )
-                        );
-                        setEditOpen(false);
-                      }}
-                    >
-                      保存
-                    </Button>
-                  </div>
+                          setStudyPlans((prev) =>
+                            prev.map((p) =>
+                              p.id === selectedPlan.id ? selectedPlan : p
+                            )
+                          );
+                          setEditOpen(false);
+                        }}
+                      >
+                        保存
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </DialogContent>
@@ -602,7 +622,11 @@ export default function CalendarWithPlansAndNotes() {
                         marginTop: `${pi * 6}px`,
                       }}
                     >
-                      {plan.start >= weekStart ? plan.title : ""}
+                      {startIndex === 0 ||
+                      format(plan.start, "yyyy-MM-dd") ===
+                        format(barStart, "yyyy-MM-dd")
+                        ? plan.title
+                        : ""}
                     </div>
                   );
                 })}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../supabaseClient";
 
 export default function ProfilePage() {
   const [userId, setUserId] = useState<any>(null);
@@ -92,12 +92,10 @@ export default function ProfilePage() {
     try {
       let avatarUrl: string | null = avatarPreview;
 
-      // （簡易実装）ファイルを Supabase Storage にアップロードする場合はここで処理追加
-      // 例: supabase.storage.from("avatars").upload(`public/${user.id}.png`, avatarFile)
-
       // ✅ ファイルが選ばれていたら Storage にアップロード
       if (avatarFile) {
         const fileExt = avatarFile.name.split(".").pop();
+
         const filePath = `${userId}/avatar.${fileExt}`;
 
         // 上書き保存 (既存があれば置き換え)
