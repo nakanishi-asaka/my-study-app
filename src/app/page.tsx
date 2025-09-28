@@ -7,9 +7,7 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center min-h-screen py-2">
       <h1 className="text-4xl font-bold">Welcome to the Home Page</h1>
 
-      <p className="mt-4 text-lg">
-        This is the main landing page of the application.
-      </p>
+      <p className="mt-4 text-lg">毎日Todoを完了して、目標を達成しよう✨</p>
       <Link href="/main/home">
         <button
           className="bg-green-900 text-white text-lg

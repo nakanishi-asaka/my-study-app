@@ -19,6 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Pencil, Trash2 } from "lucide-react";
+
+import { isWeekend } from "date-fns";
 
 type Profile = {
   exam_date: string | null;
@@ -34,9 +37,13 @@ type StudyStats = {
 };
 
 // 平日/休日判定
-function getDayType() {
-  const today = new Date();
-  const day = today.getDay(); // 0=日,1=月,…,6=土
+function getDayType(dayRolloverHour: number): "weekdays" | "weekend" {
+  const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3; // デフォルト3時
+  const now = new Date();
+
+  //rolloverHourを引いた時刻を計算
+  const adjusted = new Date(now.getTime() - rollover * 60 * 60 * 1000);
+  const day = adjusted.getDay(); // 0=日,1=月,…,6=土
   return day === 0 || day === 6 ? "weekend" : "weekdays";
 }
 
@@ -49,7 +56,9 @@ function getCountdown(targetDate: Date) {
 
 // ユーザーごとの adjusted_date を計算する関数
 function getAdjustedDate(dayRolloverHour: number): string {
+  const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3; // デフォルト3時
   const now = new Date();
+  // 現在時刻から dayRolloverHour を引いた時刻を計算
   const adjusted = new Date(now.getTime() - dayRolloverHour * 60 * 60 * 1000);
   return adjusted.toISOString().slice(0, 10);
 }
@@ -68,8 +77,16 @@ export default function HomePage() {
   const [open, setOpen] = useState(false);
   const [editTodo, setEditTodo] = useState<any | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [weekendTodos, setWeekendTodos] = useState<any[]>([]);
   const [weekendOpen, setWeekendOpen] = useState(false);
+  const [dayRolloverHour, setDayRolloverHour] = useState<number>(3);
+
+  //モーダルでtodo表示用
+  const [weekdayTodos, setWeekdayTodos] = useState<any[]>([]);
+  const [weekendTodos, setWeekendTodos] = useState<any[]>([]);
+
+  //モーダルでtodo表示用
+  const today = new Date();
+  const weekend = isWeekend(today); // 土日かどうか判定
 
   // ✅ クライアント側で session を取得してユーザー設定 + デバッグ
   useEffect(() => {
@@ -169,10 +186,36 @@ export default function HomePage() {
     fetchStats();
   }, [user]);
 
-  // progress の rollover 処理
+  //モーダルでtodo表示用
+  useEffect(() => {
+    const fetchTodos = async () => {
+      // 平日用
+      const { data: weekdayData, error: weekdayError } = await supabase
+        .from("todo_templates")
+        .select("*")
+        .eq("repeat_type", "weekdays")
+        .eq("is_active", true);
+
+      if (weekdayError) console.error(weekdayError);
+      setWeekdayTodos(weekdayData || []);
+
+      // 休日用
+      const { data: weekendData, error: weekendError } = await supabase
+        .from("todo_templates")
+        .select("*")
+        .eq("repeat_type", "weekend")
+        .eq("is_active", true);
+
+      if (weekendError) console.error(weekendError);
+      setWeekendTodos(weekendData || []);
+    };
+
+    fetchTodos();
+  }, []);
+
+  // progress の rollover(過去分の処理)
   const rolloverProgress = async (userId: string, rolloverHour: number) => {
     const today = getAdjustedDate(rolloverHour);
-    const dayType = getDayType(); // "weekdays" or "weekend"
 
     // 昨日以前の progress を取得
     const { data: oldProgress } = await supabase
@@ -191,11 +234,11 @@ export default function HomePage() {
           template_id: p.template_id,
           is_done: false,
           title: p.todo_templates?.title ?? "",
+          date: p.adjusted_date, //当日扱いの日付
         }));
-        await supabase.from("todo_records").upsert(insertRows, {
-          onConflict: "user_id,template_id,date",
+        await supabase.from("todo_records").insert(insertRows, {
+          ignoreDuplicates: true,
         });
-        console.log("unfinished:", unfinished);
       }
 
       // 古い progress を削除
@@ -204,27 +247,6 @@ export default function HomePage() {
         .delete()
         .eq("user_id", userId)
         .lt("adjusted_date", today);
-    }
-
-    // 今日の progress で dayType と違うものも削除
-    const { data: templates } = await supabase
-      .from("todo_templates")
-      .select("id, repeat_type")
-      .eq("user_id", userId);
-
-    if (templates) {
-      const invalidTemplateIds = templates
-        .filter((t) => t.repeat_type !== dayType)
-        .map((t) => t.id);
-
-      if (invalidTemplateIds.length > 0) {
-        await supabase
-          .from("todo_progress")
-          .delete()
-          .eq("user_id", userId)
-          .eq("adjusted_date", today)
-          .in("template_id", invalidTemplateIds);
-      }
     }
   };
 
@@ -240,9 +262,14 @@ export default function HomePage() {
         .single();
 
       const rolloverHour = profile?.day_rollover_hour ?? 3; // デフォルト3時
+
+      //今日の日付を取得(rollover基準なので、深夜は前日扱い)
       const today = getAdjustedDate(rolloverHour);
 
-      // ✅ rollover 処理(←修正)
+      //曜日を判定
+      const dayType = getDayType(rolloverHour);
+
+      // ✅ rollover 処理(昨日の未完了を保存、古い progress 削除、今日の progress 調整)
       await rolloverProgress(userId, rolloverHour);
 
       // 今日の progress を取得
@@ -258,8 +285,7 @@ export default function HomePage() {
         .select("id, title, repeat_type, is_active")
         .eq("user_id", userId);
 
-      const dayType = getDayType();
-
+      // dayType に合致する is_active=true の template を抽出
       if (templates) {
         const validTemplates = templates.filter(
           (t) => t.repeat_type === dayType && t.is_active
@@ -275,7 +301,7 @@ export default function HomePage() {
           }));
           if (insertRows.length > 0) {
             await supabase.from("todo_progress").upsert(insertRows, {
-              onConflict: "user_id,template_id,adjusted_date",
+              onConflict: "user_id,template_id,adjusted_date", // 重複回避
             });
           }
         } else {
@@ -294,7 +320,7 @@ export default function HomePage() {
               .in("template_id", toDelete);
           }
 
-          // 新しい template を追加
+          // 新しい todoがあれば、progress に追加
           const toAdd = validTemplates.filter(
             (t) => !existingIds.includes(t.id)
           );
@@ -342,10 +368,17 @@ export default function HomePage() {
   };
 
   // todo完了切替
-  const toggleTodo = async (todo: any) => {
+  const toggleTodo = async (todo: any, rolloverHour: number) => {
     if (!user?.id) return;
     try {
+      console.log("toggle rollover:", rolloverHour);
+
+      //今日の日付を取得(rollover基準)
+      const adjustedDate = getAdjustedDate(dayRolloverHour); //日付を決定
+
       const newDone = !todo.is_done;
+
+      // progress 更新
       const { error: progressError } = await supabase
         .from("todo_progress")
         .update({ is_done: newDone, done_at: newDone ? new Date() : null })
@@ -353,18 +386,35 @@ export default function HomePage() {
 
       if (progressError) throw progressError;
 
-      const { error: recordError } = await supabase
-        .from("todo_records")
-        .insert([
-          {
-            user_id: user.id,
-            template_id: todo.template_id,
-            is_done: newDone,
-            title: todo.todo_templates.title,
-          },
-        ]);
+      if (newDone) {
+        // 完了 → 今日の日付でupsert
+        const { error: recordError } = await supabase
+          .from("todo_records")
+          .upsert(
+            [
+              {
+                user_id: user.id,
+                template_id: todo.template_id,
+                is_done: newDone,
+                title: todo.todo_templates.title,
+                date: adjustedDate,
+              },
+            ],
+            { onConflict: "user_id,template_id,date" }
+          );
 
-      if (recordError) throw recordError;
+        if (recordError) throw recordError;
+      } else {
+        // ❌ 取り消し → その日の records を削除
+        const { error: deleteError } = await supabase
+          .from("todo_records")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("template_id", todo.template_id)
+          .eq("date", adjustedDate);
+
+        if (deleteError) throw deleteError;
+      }
 
       await fetchTodos(user.id);
     } catch (err) {
@@ -502,10 +552,6 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
       <div className="bg-white shadow-lg rounded-xl p-8 w-full max-w-2xl">
-        <div className="p-4">
-          {user ? <p>ログイン中: {user.email}</p> : <p>未ログイン</p>}
-        </div>
-
         {/* カウントダウン */}
         <div className="mb-8 p-6 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg shadow text-center">
           <p className="text-sm text-gray-600">試験まで</p>
@@ -605,9 +651,11 @@ export default function HomePage() {
                   />
                   <span>{todo.title}</span>
                 </div>
+
+                {/* 編集・削除アイコン */}
                 <div className="flex gap-2">
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="outline"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -615,14 +663,14 @@ export default function HomePage() {
                       setEditTitle(todo.title);
                     }}
                   >
-                    編集
+                    <Pencil size={16} />
                   </Button>
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="destructive"
                     onClick={() => handleDelete(todo.id, todo.template_id)}
                   >
-                    削除
+                    <Trash2 size={16} />
                   </Button>
                 </div>
               </li>
@@ -685,25 +733,36 @@ export default function HomePage() {
         {/* リンク */}
         <div className="flex flex-col sm:flex-row justify-center gap-4 mt-6">
           {/* 休日学習プラン モーダル */}
-          <Dialog
-            open={weekendOpen}
-            onOpenChange={(open) => {
-              setWeekendOpen(open);
-              if (open && user?.id) {
-                fetchWeekendTodos(user.id);
-              }
-            }}
-          >
+          <Dialog>
             <DialogTrigger asChild>
-              <Button className="inline-block bg-green-500 text-white px-4 py-2 rounded-lg shadow hover:bg-green-600 transition text-center">
-                休日学習プランへ
+              <Button className="inline-block bg-green-500 text-white px-4 py-1 rounded-lg shadow hover:bg-green-600 transition text-center">
+                {weekend ? "平日学習プランへ" : "休日学習プランへ"}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>休日学習プラン</DialogTitle>
+                <DialogTitle>
+                  {weekend ? "平日学習プラン" : "休日学習プラン"}
+                </DialogTitle>{" "}
               </DialogHeader>
-              {weekendTodos.length === 0 ? (
+              {weekend ? (
+                // 👉 休日なので「平日プラン」を表示
+                weekdayTodos.length === 0 ? (
+                  <p className="text-gray-500">平日用のTodoがありません</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {weekdayTodos.map((t) => (
+                      <li
+                        key={t.id}
+                        className="p-3 bg-gray-50 rounded shadow-sm flex justify-between"
+                      >
+                        <span>{t.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : // 👉 平日なので「休日プラン」を表示
+              weekendTodos.length === 0 ? (
                 <p className="text-gray-500">休日用のTodoがありません</p>
               ) : (
                 <ul className="space-y-2">
@@ -713,13 +772,6 @@ export default function HomePage() {
                       className="p-3 bg-gray-50 rounded shadow-sm flex justify-between"
                     >
                       <span>{t.title}</span>
-                      {t.is_active ? (
-                        <span className="text-xs text-green-600 font-semibold">
-                          有効
-                        </span>
-                      ) : (
-                        <span className="text-xs text-red-500">無効</span>
-                      )}
                     </li>
                   ))}
                 </ul>
@@ -735,19 +787,6 @@ export default function HomePage() {
             >
               ログイン
             </Link>
-          )}
-
-          {/* ログアウト */}
-          {user && (
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                window.location.href = "/auth/login"; // ログインページへ戻す
-              }}
-              className="inline-block bg-red-500 text-white px-4 py-2 rounded-lg shadow hover:bg-red-600 transition text-center"
-            >
-              ログアウト
-            </button>
           )}
         </div>
       </div>

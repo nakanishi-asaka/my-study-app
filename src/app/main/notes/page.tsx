@@ -26,6 +26,9 @@ export default function NotesPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // 並
   const [showForm, setShowForm] = useState(false);
   const [modalImage, setModalImage] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<Partial<Record>>({});
   const [newRecord, setNewRecord] = useState({
     type: "note",
     title: "",
@@ -105,19 +108,22 @@ export default function NotesPage() {
     fetchRecords();
   }, []);
 
-  // 🔍 検索 & ソート適用(pinnedは除外)
-  const pinnedRecords = records.filter((r) => r.pinned);
-  const notPinnedRecords = records
+  // 🔍 検索対象は全件
+  const searchedRecords = records.filter((r) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      r.title.toLowerCase().includes(term) ||
+      (r.content?.toLowerCase().includes(term) ?? false) ||
+      (r.url?.toLowerCase().includes(term) ?? false) ||
+      (r.author?.toLowerCase().includes(term) ?? false)
+    );
+  });
+
+  // 📌 ピン止めとそれ以外に分ける
+  const pinnedRecords = searchedRecords.filter((r) => r.pinned);
+
+  const notPinnedRecords = searchedRecords
     .filter((r) => !r.pinned)
-    .filter((r) => {
-      const term = searchTerm.toLowerCase();
-      return (
-        r.title.toLowerCase().includes(term) ||
-        (r.content?.toLowerCase().includes(term) ?? false) ||
-        (r.url?.toLowerCase().includes(term) ?? false) ||
-        (r.author?.toLowerCase().includes(term) ?? false)
-      );
-    })
     .sort((a, b) => {
       if (sortKey === "created_at") {
         const t1 = new Date(a.created_at).getTime();
@@ -131,6 +137,7 @@ export default function NotesPage() {
       return 0;
     });
 
+  // ✅ 表示順は「ピン止め → 非ピン止め」
   const filteredRecords = [...pinnedRecords, ...notPinnedRecords];
 
   //ノートを追加
@@ -202,6 +209,49 @@ export default function NotesPage() {
     setShowForm(false);
   };
 
+  // 編集→保存処理
+  const handleSave = async (id: number) => {
+    if (!user) return;
+
+    // ✅ DBに存在するカラムだけ抽出
+    const allowedKeys = [
+      "title",
+      "content",
+      "url",
+      "image_url",
+      "author",
+      "pinned",
+    ];
+    const filteredValues = Object.fromEntries(
+      Object.entries(editValues).filter(([key]) => allowedKeys.includes(key))
+    );
+
+    if (Object.keys(filteredValues).length === 0) {
+      console.warn("更新対象なし");
+      setEditingId(null);
+      return;
+    }
+
+    const { error, data } = await supabase
+      .from("study_records")
+      .update(filteredValues)
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Update error:", error.message);
+      return;
+    }
+
+    setRecords((prev) =>
+      prev.map((rec) => (rec.id === id ? { ...rec, ...data } : rec))
+    );
+    setEditingId(null);
+    setEditValues({});
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6 flex justify-center">
       <div className="w-full max-w-3xl bg-white shadow-lg rounded-xl p-8">
@@ -234,107 +284,123 @@ export default function NotesPage() {
           </select>
         </div>
 
-        {/* 追加ボタン */}
-        <div className="text-center mb-6">
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition"
-          >
-            ＋ 新しい記録を追加
-          </button>
-        </div>
-
-        {/* 入力フォーム */}
-        {showForm && (
-          <form
-            onSubmit={handleAddRecord}
-            className="mb-8 p-4 border rounded-lg bg-gray-50 space-y-4"
-          >
-            <div>
-              <label className="block text-sm font-medium">タイトル</label>
-              <input
-                type="text"
-                value={newRecord.title}
-                onChange={(e) =>
-                  setNewRecord({ ...newRecord, title: e.target.value })
-                }
-                className="mt-1 w-full border rounded px-2 py-1"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium">タイプ</label>
-              <select
-                value={newRecord.type}
-                onChange={(e) =>
-                  setNewRecord({ ...newRecord, type: e.target.value })
-                }
-                className="mt-1 w-full border rounded px-2 py-1"
-              >
-                <option value="note">メモ</option>
-                <option value="image">画像</option>
-                <option value="link">リンク</option>
-                <option value="book">書籍</option>
-              </select>
-            </div>
-
-            {newRecord.type === "note" && (
-              <textarea
-                value={newRecord.content}
-                onChange={(e) =>
-                  setNewRecord({ ...newRecord, content: e.target.value })
-                }
-                className="mt-1 w-full border rounded px-2 py-1"
-              />
-            )}
-
-            {newRecord.type === "link" && (
-              <input
-                type="url"
-                value={newRecord.url}
-                onChange={(e) =>
-                  setNewRecord({ ...newRecord, url: e.target.value })
-                }
-                className="mt-1 w-full border rounded px-2 py-1"
-              />
-            )}
-
-            {newRecord.type === "image" && (
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  if (e.target.files?.[0]) {
-                    setNewRecord({
-                      ...newRecord,
-                      image_url: e.target.files[0] as any,
-                    });
-                  }
-                }}
-                className="mt-1 w-full border rounded px-2 py-1"
-              />
-            )}
-
-            {newRecord.type === "book" && (
-              <input
-                type="text"
-                value={newRecord.author}
-                onChange={(e) =>
-                  setNewRecord({ ...newRecord, author: e.target.value })
-                }
-                className="mt-1 w-full border rounded px-2 py-1"
-              />
-            )}
-
+        <div className="mb-6 flex  items-center relative">
+          {/* 追加ボタン */}
+          <div className="mx-auto">
             <button
-              type="submit"
-              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition"
+              onClick={() => setShowForm(!showForm)}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition"
             >
-              保存
+              ＋ 新しい記録を追加
             </button>
-          </form>
-        )}
+          </div>
+
+          {/* 入力フォーム */}
+          {showForm && (
+            <form
+              onSubmit={handleAddRecord}
+              className="mb-8 p-4 border rounded-lg bg-gray-50 space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium">タイトル</label>
+                <input
+                  type="text"
+                  value={newRecord.title}
+                  onChange={(e) =>
+                    setNewRecord({ ...newRecord, title: e.target.value })
+                  }
+                  className="mt-1 w-full border rounded px-2 py-1"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">タイプ</label>
+                <select
+                  value={newRecord.type}
+                  onChange={(e) =>
+                    setNewRecord({ ...newRecord, type: e.target.value })
+                  }
+                  className="mt-1 w-full border rounded px-2 py-1"
+                >
+                  <option value="note">メモ</option>
+                  <option value="image">画像</option>
+                  <option value="link">リンク</option>
+                  <option value="book">書籍</option>
+                </select>
+              </div>
+
+              {newRecord.type === "note" && (
+                <textarea
+                  value={newRecord.content}
+                  onChange={(e) =>
+                    setNewRecord({ ...newRecord, content: e.target.value })
+                  }
+                  className="mt-1 w-full border rounded px-2 py-1"
+                />
+              )}
+
+              {newRecord.type === "link" && (
+                <input
+                  type="url"
+                  value={newRecord.url}
+                  onChange={(e) =>
+                    setNewRecord({ ...newRecord, url: e.target.value })
+                  }
+                  className="mt-1 w-full border rounded px-2 py-1"
+                />
+              )}
+
+              {newRecord.type === "image" && (
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      setNewRecord({
+                        ...newRecord,
+                        image_url: e.target.files[0] as any,
+                      });
+                    }
+                  }}
+                  className="mt-1 w-full border rounded px-2 py-1"
+                />
+              )}
+
+              {newRecord.type === "book" && (
+                <input
+                  type="text"
+                  value={newRecord.author}
+                  onChange={(e) =>
+                    setNewRecord({ ...newRecord, author: e.target.value })
+                  }
+                  className="mt-1 w-full border rounded px-2 py-1"
+                />
+              )}
+
+              <button
+                type="submit"
+                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition"
+              >
+                保存
+              </button>
+            </form>
+          )}
+
+          {/* 編集モード ボタン*/}
+          <div className="absolute right-0">
+            <button
+              onClick={() => setEditMode(!editMode)}
+              className={`px-4 py-2 rounded-lg shadow transition ${
+                editMode
+                  ? "bg-red-500 text-white hover:bg-red-600"
+                  : "bg-gray-300 hover:bg-gray-400"
+              }`}
+            >
+              {editMode ? "編集モード終了" : "編集モードへ"}
+            </button>
+          </div>
+        </div>
 
         {/* 全記録一覧 */}
         <section>
@@ -347,73 +413,197 @@ export default function NotesPage() {
                   r.pinned ? "bg-yellow-100" : "bg-gray-100 hover:bg-gray-200"
                 }`}
               >
-                {/* 左側：テキスト */}
                 <div className="flex-1">
-                  <strong className="block text-lg">{r.title}</strong>
-                  {r.type === "note" && <p>{r.content}</p>}
-                  {r.type === "link" && (
-                    <a
-                      href={r.url ?? ""}
-                      target="_blank"
-                      className="text-blue-600 underline mt-1 inline-block"
-                    >
-                      {r.url}
-                    </a>
+                  {editingId === r.id ? (
+                    <>
+                      {/* タイトル編集 */}
+                      <input
+                        type="text"
+                        value={editValues.title ?? r.title}
+                        onChange={(e) =>
+                          setEditValues({
+                            ...editValues,
+                            title: e.target.value,
+                          })
+                        }
+                        className="border px-2 py-1 rounded w-full mb-2"
+                      />
+
+                      {/* タイプごとの編集欄 */}
+                      {r.type === "note" && (
+                        <textarea
+                          value={editValues.content ?? r.content ?? ""}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              content: e.target.value,
+                            })
+                          }
+                          className="border px-2 py-1 rounded w-full"
+                        />
+                      )}
+
+                      {r.type === "link" && (
+                        <input
+                          type="url"
+                          value={editValues.url ?? r.url ?? ""}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              url: e.target.value,
+                            })
+                          }
+                          className="border px-2 py-1 rounded w-full"
+                        />
+                      )}
+
+                      {r.type === "book" && (
+                        <input
+                          type="text"
+                          value={editValues.author ?? r.author ?? ""}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              author: e.target.value,
+                            })
+                          }
+                          className="border px-2 py-1 rounded w-full"
+                        />
+                      )}
+
+                      {/* 画像タイプはタイトルのみ編集 */}
+                      {r.type === "image" && r.image_signed_url && (
+                        <img
+                          src={r.image_signed_url}
+                          alt={r.title}
+                          className="mt-2 w-24 h-24 object-cover rounded-lg border"
+                        />
+                      )}
+
+                      {/* 保存/キャンセル */}
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => handleSave(r.id)}
+                          className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                        >
+                          保存
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditValues({});
+                          }}
+                          className="px-3 py-1 bg-gray-400 text-white rounded hover:bg-gray-500"
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <strong className="block text-lg">{r.title}</strong>
+                      {r.type === "note" && <p>{r.content}</p>}
+                      {r.type === "link" && (
+                        <a
+                          href={r.url ?? ""}
+                          target="_blank"
+                          className="text-blue-600 underline mt-1 inline-block"
+                        >
+                          {r.url}
+                        </a>
+                      )}
+                      {r.type === "book" && <p>著者: {r.author}</p>}
+                      {r.type === "image" && r.image_signed_url && (
+                        <img
+                          src={r.image_signed_url}
+                          alt={r.title}
+                          className="mt-2 w-24 h-24 object-cover rounded-lg cursor-pointer border hover:opacity-80"
+                          onClick={() => setModalImage(r.image_signed_url)}
+                        />
+                      )}
+                    </>
                   )}
-                  {r.type === "image" && r.image_signed_url && (
-                    <img
-                      src={r.image_signed_url}
-                      alt={r.title}
-                      className="mt-2 w-24 h-24 object-cover rounded-lg cursor-pointer border hover:opacity-80"
-                      onClick={() => setModalImage(r.image_signed_url)} // ← モーダル開く
-                    />
-                  )}
-                  {r.type === "book" && <p>著者: {r.author}</p>}
                 </div>
 
-                {/* 右端にピンアイコン配置 ピンをクリック→一番上へ*/}
+                {/* 📌 ピン止め/解除ボタン */}
                 <button
                   onClick={async () => {
-                    const { error } = await supabase
+                    const { data, error } = await supabase
                       .from("study_records")
                       .update({ pinned: !r.pinned })
+                      .eq("id", r.id)
                       .eq("user_id", user.id)
-                      .eq("id", r.id);
+                      .select()
+                      .single();
 
                     if (error) {
-                      console.error("Update error:", error.message);
+                      console.error("Pin update error:", error.message);
                       return;
                     }
 
-                    // state更新
+                    // state 更新
                     setRecords((prev) =>
-                      prev
-                        .map((rec) =>
-                          rec.id === r.id
-                            ? { ...rec, pinned: !rec.pinned }
-                            : rec
-                        )
-                        .sort((a, b) => {
-                          // ピンありは上に
-                          if (a.pinned && !b.pinned) return -1;
-                          if (!a.pinned && b.pinned) return 1;
-
-                          // 両方同じ pinned 状態なら created_at の昇順に戻す
-                          return (
-                            new Date(a.created_at).getTime() -
-                            new Date(b.created_at).getTime()
-                          );
-                        })
+                      prev.map((rec) =>
+                        rec.id === r.id ? { ...rec, ...data } : rec
+                      )
                     );
                   }}
-                  className="ml-4 p-2 rounded-full  hover:bg-gray-300 self-center"
+                  className="ml-2 text-gray-600 hover:text-yellow-600"
+                  title={r.pinned ? "ピンを外す" : "ピン止めする"}
                 >
-                  {r.pinned ? (
-                    <Pin className="w-5 h-5 text-yellow-600" />
-                  ) : (
-                    <PinOff className="w-5 h-5 text-gray-500" />
-                  )}
+                  {r.pinned ? <PinOff size={20} /> : <Pin size={20} />}
                 </button>
+
+                {/* 編集モード ON のときだけ「編集」「削除」ボタンを表示 */}
+                {editMode && editingId !== r.id && (
+                  <div className="flex gap-2 ml-2">
+                    <button
+                      onClick={() => {
+                        setEditingId(r.id);
+                        setEditValues(r); // 現在の値をコピー
+                      }}
+                      className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      編集
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (confirm("本当に削除しますか？")) {
+                          const { error } = await supabase
+                            .from("study_records")
+                            .delete()
+                            .eq("id", r.id)
+                            .eq("user_id", user.id);
+
+                          if (error) {
+                            console.error("Delete error:", error.message);
+                            return;
+                          }
+                          if (r.type === "image" && r.image_url) {
+                            const { error: storageError } =
+                              await supabase.storage
+                                .from("record_images")
+                                .remove([r.image_url]);
+
+                            if (storageError) {
+                              console.error(
+                                "Storage delete error:",
+                                storageError.message
+                              );
+                            }
+                          }
+
+                          setRecords((prev) =>
+                            prev.filter((rec) => rec.id !== r.id)
+                          );
+                        }
+                      }}
+                      className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      削除
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -437,16 +627,6 @@ export default function NotesPage() {
             </div>
           </div>
         )}
-
-        {/* ホームへ戻る */}
-        <div className="text-center mt-10">
-          <Link
-            href="/"
-            className="inline-block bg-gray-500 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-600 transition"
-          >
-            ホームに戻る
-          </Link>
-        </div>
       </div>
     </div>
   );

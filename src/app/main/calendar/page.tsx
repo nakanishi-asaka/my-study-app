@@ -10,6 +10,7 @@ import {
   startOfWeek,
   endOfWeek,
   parseISO,
+  differenceInCalendarDays,
 } from "date-fns";
 import { BookOpen, Plus } from "lucide-react";
 
@@ -77,6 +78,10 @@ export default function CalendarWithPlansAndNotes() {
 
   // ✅ 学習時間マッピング用 state
   const [dailyStudy, setDailyStudy] = useState<Record<string, number>>({});
+
+  //今日の予定表示用
+  const today = new Date();
+  const todayKey = format(today, "yyyy-MM-dd");
 
   // ✅ セッション確認 & ユーザー設定
   useEffect(() => {
@@ -186,6 +191,11 @@ export default function CalendarWithPlansAndNotes() {
     fetchRecords();
   }, []);
 
+  // ✅ 今日の予定を抽出
+  const todaysPlans = studyPlans.filter(
+    (plan) => plan.start <= today && plan.end >= today
+  );
+
   // ✅ 予定追加
   const handleAddPlan = async () => {
     if (!user) {
@@ -274,111 +284,142 @@ export default function CalendarWithPlansAndNotes() {
         </div>
 
         {/* ヘッダー */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-center">学習カレンダー</h1>
-
-          {/* 勉強時間入力フォーム */}
-          <div className="flex gap-2 items-center border p-2 rounded-lg">
-            <Select
-              value={hours.toString()}
-              onValueChange={(v) => setHours(Number(v))}
-            >
-              <SelectTrigger className="w-20">
-                <SelectValue placeholder="時間" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 13 }, (_, i) => (
-                  <SelectItem key={i} value={i.toString()}>
-                    {i} 時
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={minutes.toString()}
-              onValueChange={(v) => setMinutes(Number(v))}
-            >
-              <SelectTrigger className="w-20">
-                <SelectValue placeholder="分" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
-                  <SelectItem key={m} value={m.toString()}>
-                    {m} 分
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              onClick={handleSaveStudyTime}
-              className="bg-green-500 hover:bg-green-600"
-            >
-              保存
-            </Button>
-          </div>
-
-          {/* 予定作成ボタン */}
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="rounded-full bg-orange-500 hover:bg-orange-600">
-                <Plus size={20} className="mr-1" />
-                予定追加
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>新しい予定を追加</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3">
-                <Input
-                  placeholder="タイトル"
-                  value={newPlan.title}
-                  onChange={(e) =>
-                    setNewPlan({ ...newPlan, title: e.target.value })
-                  }
-                />
-                <Input
-                  type="date"
-                  value={newPlan.start}
-                  onChange={(e) =>
-                    setNewPlan({ ...newPlan, start: e.target.value })
-                  }
-                />
-                <Input
-                  type="date"
-                  value={newPlan.end}
-                  onChange={(e) =>
-                    setNewPlan({ ...newPlan, end: e.target.value })
-                  }
-                />
-                <Select
-                  value={newPlan.color}
-                  onValueChange={(v) => setNewPlan({ ...newPlan, color: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="色を選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bg-purple-400">紫</SelectItem>
-                    <SelectItem value="bg-blue-400">青</SelectItem>
-                    <SelectItem value="bg-green-400">緑</SelectItem>
-                    <SelectItem value="bg-red-400">赤</SelectItem>
-                    <SelectItem value="bg-yellow-400">黄</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setOpen(false)}>
-                    キャンセル
-                  </Button>
-                  <Button onClick={handleAddPlan} className="bg-orange-500">
-                    追加
-                  </Button>
+        <div className="flex justify-between items-end mb-3">
+          {/* 左側: タイトル + 今日の予定 */}
+          <div className="flex flex-col gap-2 mr-3">
+            <h1 className="text-2xl font-bold">学習カレンダー</h1>
+            {todaysPlans.length > 0 && (
+              <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
+                <p className="font-semibold text-blue-700">今日の予定：</p>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {todaysPlans.map((plan) => {
+                    const days =
+                      differenceInCalendarDays(today, plan.start) + 1;
+                    return (
+                      <span
+                        key={plan.id}
+                        className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-semibold"
+                      >
+                        {plan.title}（{days}日目）
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
-            </DialogContent>
-          </Dialog>
+            )}
+          </div>
+
+          {/* 右側: 入力フォームと予定追加ボタン */}
+          <div className="flex flex-col sm:flex-row items-end gap-4">
+            {/* 勉強時間入力フォーム */}
+            <div className="flex flex-col gap-2 border p-4  rounded-lg w-full sm:w-auto">
+              <p className="text-sm font-semibold text-gray-700">
+                🕐今日の学習時間を入力
+              </p>
+              <div className="flex gap-3 items-center">
+                <Select
+                  value={hours.toString()}
+                  onValueChange={(v) => setHours(Number(v))}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue placeholder="時間" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 13 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString()}>
+                        {i} 時間
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={minutes.toString()}
+                  onValueChange={(v) => setMinutes(Number(v))}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue placeholder="分" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
+                      <SelectItem key={m} value={m.toString()}>
+                        {m} 分
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  onClick={handleSaveStudyTime}
+                  className="bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
+                >
+                  保存
+                </Button>
+              </div>
+            </div>
+
+            {/* 予定追加ボタン */}
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button className="rounded-full bg-orange-500 hover:bg-orange-600 px-6 py-3 text-base">
+                  <Plus size={20} className="mr-1" />
+                  予定追加
+                </Button>
+              </DialogTrigger>
+              {/* ...モーダルの中身はそのまま... */}
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>新しい予定を追加</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <Input
+                    placeholder="タイトル"
+                    value={newPlan.title}
+                    onChange={(e) =>
+                      setNewPlan({ ...newPlan, title: e.target.value })
+                    }
+                  />
+                  <Input
+                    type="date"
+                    value={newPlan.start}
+                    onChange={(e) =>
+                      setNewPlan({ ...newPlan, start: e.target.value })
+                    }
+                  />
+                  <Input
+                    type="date"
+                    value={newPlan.end}
+                    onChange={(e) =>
+                      setNewPlan({ ...newPlan, end: e.target.value })
+                    }
+                  />
+                  <Select
+                    value={newPlan.color}
+                    onValueChange={(v) => setNewPlan({ ...newPlan, color: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="色を選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bg-purple-400">紫</SelectItem>
+                      <SelectItem value="bg-blue-400">青</SelectItem>
+                      <SelectItem value="bg-green-400">緑</SelectItem>
+                      <SelectItem value="bg-red-400">赤</SelectItem>
+                      <SelectItem value="bg-yellow-400">黄</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setOpen(false)}>
+                      キャンセル
+                    </Button>
+                    <Button onClick={handleAddPlan} className="bg-orange-500">
+                      追加
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           {/* 編集モーダル */}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -548,20 +589,33 @@ export default function CalendarWithPlansAndNotes() {
                   const key = format(day, "yyyy-MM-dd");
                   const titles = dailyRecords[key] || [];
 
+                  const isToday =
+                    format(day, "yyyy-MM-dd") ===
+                    format(new Date(), "yyyy-MM-dd");
+
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`h-32 border rounded-lg p-1 text-xs flex flex-col justify-between
-                        ${
-                          day.getMonth() === month.getMonth()
-                            ? "bg-gray-50"
-                            : "bg-gray-100 text-gray-400"
-                        }`}
+                      className={`h-32 border rounded-lg p-1 text-xs flex flex-col justify-between relative
+         ${
+           isToday
+             ? "bg-blue-100 border-blue-300" // 今日 → セル全体の背景色
+             : day.getMonth() === month.getMonth()
+             ? "bg-gray-50"
+             : "bg-gray-100 text-gray-400"
+         }
+  `}
                     >
                       {/* 上部: 日付と時間 */}
                       <div>
                         <div className="flex justify-between items-start">
-                          <span className="font-semibold">
+                          <span
+                            className={`${
+                              isToday
+                                ? "text-base font-bold text-blue-700"
+                                : "font-semibold"
+                            }`}
+                          >
                             {format(day, "d")}
                           </span>
                           {dailyStudy[key] && (
@@ -619,7 +673,7 @@ export default function CalendarWithPlansAndNotes() {
                       style={{
                         gridColumnStart: startIndex + 1,
                         gridColumnEnd: endIndex + 2,
-                        marginTop: `${pi * 6}px`,
+                        marginTop: `${pi * 2}px`,
                       }}
                     >
                       {startIndex === 0 ||

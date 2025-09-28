@@ -1,5 +1,6 @@
 "use client";
 
+import Header from "@/components/ui/Header";
 import BottomNav from "../../components/ui/BottomNav";
 
 export default function MainLayout({
@@ -9,6 +10,7 @@ export default function MainLayout({
 }) {
   return (
     <div className="min-h-screen pb-16">
+      <Header />
       {children}
       <BottomNav />
     </div>

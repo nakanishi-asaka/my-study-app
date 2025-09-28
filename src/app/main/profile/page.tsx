@@ -194,7 +194,7 @@ export default function ProfilePage() {
               )}
             </div>
 
-            <p className="mt-3 text-xs text-gray-500">
+            <p className="mt-3 text-xs text-gray-600">
               推奨: PNG/JPEG, 3MB 以下
             </p>
           </div>
@@ -211,7 +211,7 @@ export default function ProfilePage() {
                 aria-label="ユーザー名"
                 className="mt-2 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
-              <p className="text-xs mt-1 text-slate-500">
+              <p className="text-xs mt-1 text-slate-600">
                 2文字以上で入力してください。
               </p>
             </label>
@@ -225,7 +225,7 @@ export default function ProfilePage() {
                 aria-label="試験日"
                 className="mt-2 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
-              <p className="text-xs mt-1 text-slate-500">例：2025-12-01</p>
+              <p className="text-xs mt-1 text-slate-600">例：2025-12-01</p>
             </label>
 
             {/* ✅ 追加: 日付切替時間 */}
@@ -239,7 +239,7 @@ export default function ProfilePage() {
                 onChange={(e) => setDayRolloverHour(Number(e.target.value))}
                 className="mt-2 w-24 rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
-              <p className="text-xs mt-1 text-slate-500">
+              <p className="text-xs mt-1 text-slate-600">
                 例: 3 → 3時を過ぎたら翌日扱い
               </p>
             </label>
