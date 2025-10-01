@@ -191,10 +191,17 @@ export default function CalendarWithPlansAndNotes() {
     fetchRecords();
   }, []);
 
-  // ✅ 今日の予定を抽出
-  const todaysPlans = studyPlans.filter(
-    (plan) => plan.start <= today && plan.end >= today
-  );
+  // ✅ 今日の予定を抽出(Dateに変換して比較)
+  const toDateOnly = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  const todayOnly = toDateOnly(new Date());
+
+  const todaysPlans = studyPlans.filter((plan) => {
+    const start = toDateOnly(new Date(plan.start)); // ← string → Date
+    const end = toDateOnly(new Date(plan.end));
+    return start <= todayOnly && end >= todayOnly;
+  });
 
   // ✅ 予定追加
   const handleAddPlan = async () => {
@@ -278,11 +285,6 @@ export default function CalendarWithPlansAndNotes() {
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-6xl mx-auto bg-white rounded-xl shadow p-6 relative">
-        {/* ✅ ログイン状況の表示 */}
-        <div className="mb-4 text-sm text-gray-600">
-          {user ? `ログイン中: ${user.email}` : "未ログイン"}
-        </div>
-
         {/* ヘッダー */}
         <div className="flex justify-between items-end mb-3">
           {/* 左側: タイトル + 今日の予定 */}

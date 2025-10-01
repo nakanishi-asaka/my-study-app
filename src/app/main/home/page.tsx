@@ -19,9 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Pencil, Trash2 } from "lucide-react";
 
 import { isWeekend } from "date-fns";
+import TodoList from "../components/TodoList";
+import TodoModal from "../components/TodoModal";
 
 type Profile = {
   exam_date: string | null;
@@ -37,12 +38,14 @@ type StudyStats = {
 };
 
 // 平日/休日判定
-function getDayType(dayRolloverHour: number): "weekdays" | "weekend" {
+function getDayType(
+  date: Date,
+  dayRolloverHour: number
+): "weekdays" | "weekend" {
   const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3; // デフォルト3時
-  const now = new Date();
 
   //rolloverHourを引いた時刻を計算
-  const adjusted = new Date(now.getTime() - rollover * 60 * 60 * 1000);
+  const adjusted = new Date(date.getTime() - rollover * 60 * 60 * 1000);
   const day = adjusted.getDay(); // 0=日,1=月,…,6=土
   return day === 0 || day === 6 ? "weekend" : "weekdays";
 }
@@ -77,7 +80,6 @@ export default function HomePage() {
   const [open, setOpen] = useState(false);
   const [editTodo, setEditTodo] = useState<any | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [weekendOpen, setWeekendOpen] = useState(false);
   const [dayRolloverHour, setDayRolloverHour] = useState<number>(3);
 
   //モーダルでtodo表示用
@@ -215,7 +217,7 @@ export default function HomePage() {
 
   // progress の rollover(過去分の処理)
   const rolloverProgress = async (userId: string, rolloverHour: number) => {
-    const today = getAdjustedDate(rolloverHour);
+    const today = getAdjustedDate(rolloverHour); // 今日の日付(rollover基準)
 
     // 昨日以前の progress を取得
     const { data: oldProgress } = await supabase
@@ -236,9 +238,19 @@ export default function HomePage() {
           title: p.todo_templates?.title ?? "",
           date: p.adjusted_date, //当日扱いの日付
         }));
-        await supabase.from("todo_records").insert(insertRows, {
-          ignoreDuplicates: true,
-        });
+
+        // ✅ insert → エラーなら削除しない（データ喪失防止）
+        const { error } = await supabase
+          .from("todo_records")
+          .upsert(insertRows, { onConflict: "user_id,template_id,date" }); // 重複回避
+
+        if (error) {
+          console.error(
+            "Failed to insert unfinished todos into records:",
+            error
+          );
+          return; // ❌ この場合は progress 削除せず return
+        }
       }
 
       // 古い progress を削除
@@ -265,14 +277,15 @@ export default function HomePage() {
 
       //今日の日付を取得(rollover基準なので、深夜は前日扱い)
       const today = getAdjustedDate(rolloverHour);
+      console.log("today:", today);
 
       //曜日を判定
-      const dayType = getDayType(rolloverHour);
+      const dayType = getDayType(new Date(), rolloverHour); // "weekdays" or "weekend"
 
-      // ✅ rollover 処理(昨日の未完了を保存、古い progress 削除、今日の progress 調整)
+      // ✅ rollover 処理(昨日の未完了を保存、古い progress 削除)
       await rolloverProgress(userId, rolloverHour);
 
-      // 今日の progress を取得
+      // 今日の progress を取得(なければ作成、あったら差分調整)
       const { data: existing } = await supabase
         .from("todo_progress")
         .select("id, template_id, is_done")
@@ -368,11 +381,9 @@ export default function HomePage() {
   };
 
   // todo完了切替
-  const toggleTodo = async (todo: any, rolloverHour: number) => {
+  const toggleTodo = async (todo: any) => {
     if (!user?.id) return;
     try {
-      console.log("toggle rollover:", rolloverHour);
-
       //今日の日付を取得(rollover基準)
       const adjustedDate = getAdjustedDate(dayRolloverHour); //日付を決定
 
@@ -381,7 +392,10 @@ export default function HomePage() {
       // progress 更新
       const { error: progressError } = await supabase
         .from("todo_progress")
-        .update({ is_done: newDone, done_at: newDone ? new Date() : null })
+        .update({
+          is_done: newDone,
+          done_at: newDone ? new Date().toISOString() : null,
+        })
         .eq("id", todo.id);
 
       if (progressError) throw progressError;
@@ -395,8 +409,8 @@ export default function HomePage() {
               {
                 user_id: user.id,
                 template_id: todo.template_id,
-                is_done: newDone,
-                title: todo.todo_templates.title,
+                is_done: true,
+                title: todo.todo_templates.title ?? "",
                 date: adjustedDate,
               },
             ],
@@ -450,23 +464,6 @@ export default function HomePage() {
 
       if (templateError) throw templateError;
 
-      // 2. 今日に該当するなら progress も作成
-      if (repeatType === getDayType()) {
-        const today = new Date().toISOString().slice(0, 10);
-
-        const { error: progressError } = await supabase
-          .from("todo_progress")
-          .insert([
-            {
-              template_id: templateData.id,
-              user_id: user.id,
-              adjusted_date: today,
-              is_done: false,
-            },
-          ]);
-
-        if (progressError) throw progressError;
-      }
       await fetchTodos(user.id);
 
       setTitle("");
@@ -493,13 +490,6 @@ export default function HomePage() {
             deactivated_at: new Date().toISOString().slice(0, 10),
           })
           .eq("id", templateId);
-
-        // progress を削除
-        await supabase
-          .from("todo_progress")
-          .delete()
-          .eq("user_id", user.id)
-          .eq("template_id", templateId);
       }
       await fetchTodos(user.id);
     } catch (err) {
@@ -512,40 +502,16 @@ export default function HomePage() {
     if (!user?.id || !editTodo) return;
     try {
       await supabase
-        .from("todo_records")
+        .from("todo_templates")
         .update({ title: editTitle })
-        .eq("id", editTodo.id);
-      if (editTodo.template_id) {
-        await supabase
-          .from("todo_templates")
-          .update({ title: editTitle })
-          .eq("id", editTodo.template_id);
-      }
+        .eq("id", editTodo.template_id);
+
       await fetchTodos(user.id);
       setEditTodo(null);
       setEditTitle("");
     } catch (err) {
       console.error("update error:", err);
       alert("更新に失敗しました");
-    }
-  };
-
-  //weekend用Todo取得
-  const fetchWeekendTodos = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("todo_templates")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("repeat_type", "weekend")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      setWeekendTodos(data || []);
-    } catch (err) {
-      console.error("fetchWeekendTodos error:", err);
-      setWeekendTodos([]);
     }
   };
 
@@ -632,49 +598,16 @@ export default function HomePage() {
           <p className="text-gray-500 text-center">Todoがありません</p>
         ) : (
           <ul className="space-y-3">
-            {todos.map((todo) => (
-              <li
-                key={todo.id}
-                className={`flex items-center gap-3 p-4 rounded-md shadow-sm cursor-pointer transition ${
-                  todo.is_done
-                    ? "bg-green-50 line-through text-gray-500"
-                    : "bg-gray-50 hover:bg-gray-100"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={todo.is_done}
-                    readOnly
-                    onClick={() => toggleTodo(todo)}
-                    className="w-5 h-5 cursor-pointer"
-                  />
-                  <span>{todo.title}</span>
-                </div>
-
-                {/* 編集・削除アイコン */}
-                <div className="flex gap-2">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditTodo(todo);
-                      setEditTitle(todo.title);
-                    }}
-                  >
-                    <Pencil size={16} />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="destructive"
-                    onClick={() => handleDelete(todo.id, todo.template_id)}
-                  >
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
-              </li>
-            ))}
+            <TodoList
+              todos={todos}
+              loading={loading}
+              onToggle={toggleTodo}
+              onEdit={(todo) => {
+                setEditTodo(todo);
+                setEditTitle(todo.title);
+              }}
+              onDelete={handleDelete}
+            />
           </ul>
         )}
 
@@ -733,51 +666,21 @@ export default function HomePage() {
         {/* リンク */}
         <div className="flex flex-col sm:flex-row justify-center gap-4 mt-6">
           {/* 休日学習プラン モーダル */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button className="inline-block bg-green-500 text-white px-4 py-1 rounded-lg shadow hover:bg-green-600 transition text-center">
-                {weekend ? "平日学習プランへ" : "休日学習プランへ"}
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {weekend ? "平日学習プラン" : "休日学習プラン"}
-                </DialogTitle>{" "}
-              </DialogHeader>
-              {weekend ? (
-                // 👉 休日なので「平日プラン」を表示
-                weekdayTodos.length === 0 ? (
-                  <p className="text-gray-500">平日用のTodoがありません</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {weekdayTodos.map((t) => (
-                      <li
-                        key={t.id}
-                        className="p-3 bg-gray-50 rounded shadow-sm flex justify-between"
-                      >
-                        <span>{t.title}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )
-              ) : // 👉 平日なので「休日プラン」を表示
-              weekendTodos.length === 0 ? (
-                <p className="text-gray-500">休日用のTodoがありません</p>
-              ) : (
-                <ul className="space-y-2">
-                  {weekendTodos.map((t) => (
-                    <li
-                      key={t.id}
-                      className="p-3 bg-gray-50 rounded shadow-sm flex justify-between"
-                    >
-                      <span>{t.title}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </DialogContent>
-          </Dialog>
+          {weekend ? (
+            // 👉 休日なので「平日プラン」をモーダルで表示
+            <TodoModal
+              todos={weekdayTodos}
+              mode="weekday"
+              buttonLabel="平日todoを確認"
+            />
+          ) : (
+            // 👉 平日なので「休日プラン」をモーダルで表示
+            <TodoModal
+              todos={weekendTodos}
+              mode="weekend"
+              buttonLabel="休日todoを確認"
+            />
+          )}
 
           {/* ログインページ */}
           {!user && (
