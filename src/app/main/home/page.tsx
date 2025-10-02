@@ -59,11 +59,24 @@ function getCountdown(targetDate: Date) {
 
 // ユーザーごとの adjusted_date を計算する関数
 function getAdjustedDate(dayRolloverHour: number): string {
-  const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3; // デフォルト3時
   const now = new Date();
-  // 現在時刻から dayRolloverHour を引いた時刻を計算
-  const adjusted = new Date(now.getTime() - dayRolloverHour * 60 * 60 * 1000);
-  return adjusted.toISOString().slice(0, 10);
+  const local = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds()
+  );
+
+  // rollover 時刻を超えたか判定
+  if (local.getHours() < dayRolloverHour) {
+    // まだ rollover 前 → 前日扱い
+    local.setDate(local.getDate() - 1);
+  }
+
+  // ローカル日付を YYYY-MM-DD にフォーマット
+  return local.toISOString().slice(0, 10);
 }
 
 export default function HomePage() {
@@ -614,7 +627,7 @@ export default function HomePage() {
         {/* Todo追加モーダル */}
         <Dialog open={open} onOpenChange={(next) => setOpen(next)}>
           <DialogTrigger asChild>
-            <Button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white mt-6">
+            <Button className="w-full bg-sky-500 hover:bg-sky-600 text-white mt-6">
               Todoを追加
             </Button>
           </DialogTrigger>

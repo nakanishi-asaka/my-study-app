@@ -295,98 +295,6 @@ export default function NotesPage() {
             </button>
           </div>
 
-          {/* 入力フォーム */}
-          {showForm && (
-            <form
-              onSubmit={handleAddRecord}
-              className="mb-8 p-4 border rounded-lg bg-gray-50 space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium">タイトル</label>
-                <input
-                  type="text"
-                  value={newRecord.title}
-                  onChange={(e) =>
-                    setNewRecord({ ...newRecord, title: e.target.value })
-                  }
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium">タイプ</label>
-                <select
-                  value={newRecord.type}
-                  onChange={(e) =>
-                    setNewRecord({ ...newRecord, type: e.target.value })
-                  }
-                  className="mt-1 w-full border rounded px-2 py-1"
-                >
-                  <option value="note">メモ</option>
-                  <option value="image">画像</option>
-                  <option value="link">リンク</option>
-                  <option value="book">書籍</option>
-                </select>
-              </div>
-
-              {newRecord.type === "note" && (
-                <textarea
-                  value={newRecord.content}
-                  onChange={(e) =>
-                    setNewRecord({ ...newRecord, content: e.target.value })
-                  }
-                  className="mt-1 w-full border rounded px-2 py-1"
-                />
-              )}
-
-              {newRecord.type === "link" && (
-                <input
-                  type="url"
-                  value={newRecord.url}
-                  onChange={(e) =>
-                    setNewRecord({ ...newRecord, url: e.target.value })
-                  }
-                  className="mt-1 w-full border rounded px-2 py-1"
-                />
-              )}
-
-              {newRecord.type === "image" && (
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      setNewRecord({
-                        ...newRecord,
-                        image_url: e.target.files[0] as any,
-                      });
-                    }
-                  }}
-                  className="mt-1 w-full border rounded px-2 py-1"
-                />
-              )}
-
-              {newRecord.type === "book" && (
-                <input
-                  type="text"
-                  value={newRecord.author}
-                  onChange={(e) =>
-                    setNewRecord({ ...newRecord, author: e.target.value })
-                  }
-                  className="mt-1 w-full border rounded px-2 py-1"
-                />
-              )}
-
-              <button
-                type="submit"
-                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition"
-              >
-                保存
-              </button>
-            </form>
-          )}
-
           {/* 編集モード ボタン*/}
           <div className="absolute right-0">
             <button
@@ -401,6 +309,98 @@ export default function NotesPage() {
             </button>
           </div>
         </div>
+
+        {/* 入力フォーム */}
+        {showForm && (
+          <form
+            onSubmit={handleAddRecord}
+            className="mb-8 p-4 border rounded-lg bg-gray-50 space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-medium">タイトル</label>
+              <input
+                type="text"
+                value={newRecord.title}
+                onChange={(e) =>
+                  setNewRecord({ ...newRecord, title: e.target.value })
+                }
+                className="mt-1 w-full border rounded px-2 py-1"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">タイプ</label>
+              <select
+                value={newRecord.type}
+                onChange={(e) =>
+                  setNewRecord({ ...newRecord, type: e.target.value })
+                }
+                className="mt-1 w-full border rounded px-2 py-1"
+              >
+                <option value="note">メモ</option>
+                <option value="image">画像</option>
+                <option value="link">リンク</option>
+                <option value="book">書籍</option>
+              </select>
+            </div>
+
+            {newRecord.type === "note" && (
+              <textarea
+                value={newRecord.content}
+                onChange={(e) =>
+                  setNewRecord({ ...newRecord, content: e.target.value })
+                }
+                className="mt-1 w-full border rounded px-2 py-1"
+              />
+            )}
+
+            {newRecord.type === "link" && (
+              <input
+                type="url"
+                value={newRecord.url}
+                onChange={(e) =>
+                  setNewRecord({ ...newRecord, url: e.target.value })
+                }
+                className="mt-1 w-full border rounded px-2 py-1"
+              />
+            )}
+
+            {newRecord.type === "image" && (
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    setNewRecord({
+                      ...newRecord,
+                      image_url: e.target.files[0] as any,
+                    });
+                  }
+                }}
+                className="mt-1 w-full border rounded px-2 py-1"
+              />
+            )}
+
+            {newRecord.type === "book" && (
+              <input
+                type="text"
+                value={newRecord.author}
+                onChange={(e) =>
+                  setNewRecord({ ...newRecord, author: e.target.value })
+                }
+                className="mt-1 w-full border rounded px-2 py-1"
+              />
+            )}
+
+            <button
+              type="submit"
+              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition"
+            >
+              保存
+            </button>
+          </form>
+        )}
 
         {/* 全記録一覧 */}
         <section>
