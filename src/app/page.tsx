@@ -10,7 +10,7 @@ export default function Home() {
         {/* タイトル */}
         <h1 className="text-2xl font-bold text-gray-800">My Study App </h1>
         <p className="text-gray-600">
-          Todoを使って,、日々の積み上げを見える化しましょう。
+          Todorリストとカレンダーを使って、日々の積み上げを見える化しましょう。
         </p>
 
         {/* カード風の案内 */}
@@ -24,7 +24,7 @@ export default function Home() {
         {/* Todoページへ */}
         <Link href="/main/home">
           <Button className="w-full bg-sky-400 hover:bg-sky-600 text-white">
-            Todoページへ進む
+            はじめる
           </Button>
         </Link>
       </div>

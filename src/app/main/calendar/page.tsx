@@ -11,6 +11,7 @@ import {
   endOfWeek,
   parseISO,
   differenceInCalendarDays,
+  startOfDay,
 } from "date-fns";
 import { BookOpen, Plus } from "lucide-react";
 
@@ -590,7 +591,6 @@ export default function CalendarWithPlansAndNotes() {
                 {week.map((day) => {
                   const key = format(day, "yyyy-MM-dd");
                   const titles = dailyRecords[key] || [];
-
                   const isToday =
                     format(day, "yyyy-MM-dd") ===
                     format(new Date(), "yyyy-MM-dd");
@@ -598,71 +598,109 @@ export default function CalendarWithPlansAndNotes() {
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`h-32 border rounded-lg p-1 text-xs flex flex-col justify-between relative
-         ${
-           isToday
-             ? "bg-blue-100 border-blue-300" // 今日 → セル全体の背景色
-             : day.getMonth() === month.getMonth()
-             ? "bg-gray-50"
-             : "bg-gray-100 text-gray-400"
-         }
-  `}
+                      className={`h-32 border rounded-lg p-1 text-xs flex flex-col justify-start relative
+                ${
+                  isToday
+                    ? "bg-blue-100 border-blue-300"
+                    : day.getMonth() === month.getMonth()
+                    ? "bg-gray-50"
+                    : "bg-gray-100 text-gray-400"
+                }
+              `}
                     >
                       {/* 上部: 日付と時間 */}
-                      <div>
-                        <div className="flex justify-between items-start">
-                          <span
-                            className={`${
-                              isToday
-                                ? "text-base font-bold text-blue-700"
-                                : "font-semibold"
-                            }`}
-                          >
-                            {format(day, "d")}
+                      <div className="flex justify-between items-start">
+                        <span
+                          className={
+                            isToday
+                              ? "text-base font-bold text-blue-700"
+                              : "font-semibold"
+                          }
+                        >
+                          {format(day, "d")}
+                        </span>
+                        {dailyStudy[key] && (
+                          <span className="text-green-600 font-medium text-[15px]">
+                            {Math.floor(dailyStudy[key] / 60)}h{" "}
+                            {dailyStudy[key] % 60}m
                           </span>
-                          {dailyStudy[key] && (
-                            <span className="text-green-600 font-medium text-[15px]">
-                              {Math.floor(dailyStudy[key] / 60)}h{" "}
-                              {dailyStudy[key] % 60}m
-                            </span>
-                          )}
-                        </div>
-
-                        {/* ノートアイコン */}
-                        {titles?.length > 0 && (
-                          <button
-                            onClick={() =>
-                              setSelectedNote(selectedNote === key ? null : key)
-                            }
-                            className="mt-1 text-gray-500 hover:text-gray-800 self-start z-30 relative"
-                          >
-                            <BookOpen size={20} />
-                          </button>
                         )}
                       </div>
 
-                      {/* 下部: バーを差し込むスペース */}
-                      <div className="relative h-6 w-full"></div>
+                      {/* ノートアイコン */}
+                      {titles?.length > 0 && (
+                        <button
+                          onClick={() =>
+                            setSelectedNote(selectedNote === key ? null : key)
+                          }
+                          className="mt-1 text-gray-500 hover:text-gray-800 self-start z-30 relative"
+                        >
+                          <BookOpen size={20} />
+                        </button>
+                      )}
+
+                      {/* バー用レイヤー（セル下端に固定） */}
+                      <div className="absolute bottom-1 left-0 right-0 h-6 z-20 pointer-events-none">
+                        {/* 各セル内に来るバーを後で配置する */}
+                      </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* バーをまとめて週全体で表示 */}
+              {/* 週全体のバーをまとめて描画 */}
               <div className="absolute bottom-1 inset-x-0 grid grid-cols-7 gap-1 z-20 pointer-events-none">
                 {weekPlans.map((plan, pi) => {
-                  const barStart =
-                    plan.start > weekStart ? plan.start : weekStart;
-                  const barEnd = plan.end < weekEnd ? plan.end : weekEnd;
+                  const barStart = startOfDay(
+                    plan.start > weekStart ? plan.start : weekStart
+                  );
+                  const barEnd = startOfDay(
+                    plan.end < weekEnd ? plan.end : weekEnd
+                  );
 
                   const startIndex = week.findIndex(
                     (d) =>
-                      format(d, "yyyy-MM-dd") === format(barStart, "yyyy-MM-dd")
+                      format(startOfDay(d), "yyyy-MM-dd") ===
+                      format(barStart, "yyyy-MM-dd")
                   );
                   const endIndex = week.findIndex(
                     (d) =>
-                      format(d, "yyyy-MM-dd") === format(barEnd, "yyyy-MM-dd")
+                      format(startOfDay(d), "yyyy-MM-dd") ===
+                      format(barEnd, "yyyy-MM-dd")
                   );
+
+                  const barHeight = 16; // h-4
+                  const barGap = 2;
+
+                  // 重なり検出
+                  const overlaps = weekPlans
+                    .filter((p) => {
+                      const pStart = startOfDay(
+                        p.start > weekStart ? p.start : weekStart
+                      );
+                      const pEnd = startOfDay(
+                        p.end < weekEnd ? p.end : weekEnd
+                      );
+                      return !(pEnd < barStart || pStart > barEnd);
+                    })
+                    .sort((a, b) => {
+                      const lenA =
+                        differenceInCalendarDays(
+                          a.end < weekEnd ? a.end : weekEnd,
+                          a.start > weekStart ? a.start : weekStart
+                        ) + 1;
+                      const lenB =
+                        differenceInCalendarDays(
+                          b.end < weekEnd ? b.end : weekEnd,
+                          b.start > weekStart ? b.start : weekStart
+                        ) + 1;
+                      return lenB - lenA;
+                    });
+
+                  const localIndex = overlaps.findIndex((p) => p === plan);
+                  const maxIndex = overlaps.length - 1;
+                  const bottomOffset =
+                    (maxIndex - localIndex) * (barHeight + barGap);
 
                   return (
                     <div
@@ -671,11 +709,11 @@ export default function CalendarWithPlansAndNotes() {
                         setSelectedPlan(plan);
                         setEditOpen(true);
                       }}
-                      className={`${plan.color} bg-opacity-60 h-5 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
+                      className={`${plan.color} bg-opacity-60 h-4 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
                       style={{
                         gridColumnStart: startIndex + 1,
                         gridColumnEnd: endIndex + 2,
-                        marginTop: `${pi * 2}px`,
+                        bottom: `${bottomOffset}px`,
                       }}
                     >
                       {startIndex === 0 ||
@@ -690,18 +728,6 @@ export default function CalendarWithPlansAndNotes() {
             </div>
           );
         })}
-
-        {/* ノート概要 */}
-        {selectedNote && (
-          <div className="mt-3 p-3 bg-gray-50 border rounded">
-            <h2 className="font-bold mb-2">{selectedNote} の記録一覧</h2>
-            <ul className="list-disc list-inside text-sm space-y-1">
-              {dailyRecords[selectedNote]?.map((t, i) => (
-                <li key={i}>{t}</li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
     </div>
   );

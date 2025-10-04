@@ -37,16 +37,9 @@ type StudyStats = {
   weekend_minutes: number;
 };
 
-// 平日/休日判定
-function getDayType(
-  date: Date,
-  dayRolloverHour: number
-): "weekdays" | "weekend" {
-  const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3; // デフォルト3時
-
-  //rolloverHourを引いた時刻を計算
-  const adjusted = new Date(date.getTime() - rollover * 60 * 60 * 1000);
-  const day = adjusted.getDay(); // 0=日,1=月,…,6=土
+//平日/休日判定を adjustedDate だけで行う
+function getDayTypeFromAdjustedDate(date: Date): "weekdays" | "weekend" {
+  const day = date.getDay(); // 0=日, 6=土
   return day === 0 || day === 6 ? "weekend" : "weekdays";
 }
 
@@ -58,25 +51,32 @@ function getCountdown(targetDate: Date) {
 }
 
 // ユーザーごとの adjusted_date を計算する関数
-function getAdjustedDate(dayRolloverHour: number): string {
+// getAdjustedDate を Date オブジェクトで返す
+function getAdjustedDateObj(dayRolloverHour: number): Date {
   const now = new Date();
-  const local = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    now.getHours(),
-    now.getMinutes(),
-    now.getSeconds()
-  );
+  const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3;
 
-  // rollover 時刻を超えたか判定
-  if (local.getHours() < dayRolloverHour) {
-    // まだ rollover 前 → 前日扱い
-    local.setDate(local.getDate() - 1);
+  const adjusted = new Date(now);
+
+  if (now.getHours() < rollover) {
+    // rollover 時刻前なら「前日」を返す
+    adjusted.setDate(adjusted.getDate() - 1);
   }
 
-  // ローカル日付を YYYY-MM-DD にフォーマット
-  return local.toISOString().slice(0, 10);
+  return new Date(
+    adjusted.getFullYear(),
+    adjusted.getMonth(),
+    adjusted.getDate()
+  ); // 時刻部分を切り捨て
+}
+
+// YYYY-MM-DD に変換（DBのdate型に揃える）UTC基準に依存しない
+function formatDate(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 export default function HomePage() {
@@ -98,6 +98,8 @@ export default function HomePage() {
   //モーダルでtodo表示用
   const [weekdayTodos, setWeekdayTodos] = useState<any[]>([]);
   const [weekendTodos, setWeekendTodos] = useState<any[]>([]);
+
+  const [dayType, setDayType] = useState<"weekday" | "weekend">("weekday");
 
   //モーダルでtodo表示用
   const today = new Date();
@@ -143,7 +145,7 @@ export default function HomePage() {
     const fetchProfile = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("exam_date")
+        .select("exam_date,day_rollover_hour")
         .eq("id", user.id)
         .single();
 
@@ -153,6 +155,10 @@ export default function HomePage() {
       }
       if (data?.exam_date) {
         setExamDate(new Date(data.exam_date));
+      }
+      if (data?.day_rollover_hour != null) {
+        setDayRolloverHour(data.day_rollover_hour);
+        console.log("✅ ユーザー設定の rolloverHour:", data.day_rollover_hour);
       }
     };
 
@@ -202,42 +208,82 @@ export default function HomePage() {
   }, [user]);
 
   //モーダルでtodo表示用
+  // ✅ 調整済みの日付
+  const adjustedDate = getAdjustedDateObj(dayRolloverHour);
+
+  // ✅ 平日/休日を判定
+
+  // dayType の算出を useEffect に移動
   useEffect(() => {
-    const fetchTodos = async () => {
-      // 平日用
-      const { data: weekdayData, error: weekdayError } = await supabase
+    if (typeof dayRolloverHour !== "number") return;
+
+    const adjustedDate = getAdjustedDateObj(dayRolloverHour);
+    const type = getDayTypeFromAdjustedDate(adjustedDate);
+
+    setDayType(type); // ✅ state 更新で再レンダー発生
+
+    console.log(
+      "🕒 adjustedDate:",
+      adjustedDate.toLocaleString(),
+      "dayType:",
+      type
+    );
+  }, [dayRolloverHour]);
+
+  //モーダルのtodo取得
+  useEffect(() => {
+    if (!dayType || !user) return;
+
+    const fetchTodosForModal = async () => {
+      // 🔍 デバッグログ
+      console.log("=== modal fetchTodos Debug ===");
+      console.log("現在時刻:", new Date().toLocaleString());
+      console.log("dayType:", dayType);
+
+      const oppositeType = dayType === "weekend" ? "weekdays" : "weekend";
+
+      const { data, error } = await supabase
         .from("todo_templates")
         .select("*")
-        .eq("repeat_type", "weekdays")
+        .eq("repeat_type", oppositeType)
         .eq("is_active", true);
 
-      if (weekdayError) console.error(weekdayError);
-      setWeekdayTodos(weekdayData || []);
+      if (error) {
+        console.error(error);
+        return;
+      }
 
-      // 休日用
-      const { data: weekendData, error: weekendError } = await supabase
-        .from("todo_templates")
-        .select("*")
-        .eq("repeat_type", "weekend")
-        .eq("is_active", true);
-
-      if (weekendError) console.error(weekendError);
-      setWeekendTodos(weekendData || []);
+      if (oppositeType === "weekdays") {
+        setWeekdayTodos(data || []);
+        setWeekendTodos([]);
+      } else {
+        setWeekendTodos(data || []);
+        setWeekdayTodos([]);
+      }
+      console.log("✅ modal todos fetched:", oppositeType, data);
     };
 
-    fetchTodos();
-  }, []);
+    fetchTodosForModal();
+  }, [dayType, user]);
 
   // progress の rollover(過去分の処理)
   const rolloverProgress = async (userId: string, rolloverHour: number) => {
-    const today = getAdjustedDate(rolloverHour); // 今日の日付(rollover基準)
+    const todayObj = getAdjustedDateObj(rolloverHour);
+    const today = formatDate(todayObj); // YYYY-MM-DD
 
-    // 昨日以前の progress を取得
-    const { data: oldProgress } = await supabase
+    // 昨日以前を取得
+    const { data: oldProgress, error: fetchError } = await supabase
       .from("todo_progress")
       .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
       .eq("user_id", userId)
-      .lt("adjusted_date", today); // 昨日以前
+      .lt("adjusted_date", today); // ← DB側でdate型なのでOK
+
+    if (fetchError) {
+      console.error("Failed to fetch old progress:", fetchError);
+      return;
+    }
+    if (!oldProgress || oldProgress.length === 0) return;
+
     console.log("oldProgress:", oldProgress);
 
     if (oldProgress && oldProgress.length > 0) {
@@ -253,25 +299,39 @@ export default function HomePage() {
         }));
 
         // ✅ insert → エラーなら削除しない（データ喪失防止）
-        const { error } = await supabase
+        const { error: insertError } = await supabase
           .from("todo_records")
-          .upsert(insertRows, { onConflict: "user_id,template_id,date" }); // 重複回避
+          .upsert(insertRows, { onConflict: "user_id,template_id,date" });
 
-        if (error) {
+        if (insertError) {
           console.error(
             "Failed to insert unfinished todos into records:",
-            error
+            insertError
           );
-          return; // ❌ この場合は progress 削除せず return
+          return; // ❌ insert失敗なら削除しない
         }
       }
 
-      // 古い progress を削除
-      await supabase
+      console.log("today (delete cutoff):", today, typeof today);
+
+      const { data: checkBeforeDelete } = await supabase
+        .from("todo_progress")
+        .select("id, adjusted_date")
+        .eq("user_id", userId)
+        .lt("adjusted_date", today);
+
+      console.log("to be deleted:", checkBeforeDelete);
+
+      // ✅ insert 成功したら古い progress を削除
+      const { error: deleteError } = await supabase
         .from("todo_progress")
         .delete()
         .eq("user_id", userId)
         .lt("adjusted_date", today);
+
+      if (deleteError) {
+        console.error("Failed to delete old progress:", deleteError);
+      }
     }
   };
 
@@ -289,11 +349,12 @@ export default function HomePage() {
       const rolloverHour = profile?.day_rollover_hour ?? 3; // デフォルト3時
 
       //今日の日付を取得(rollover基準なので、深夜は前日扱い)
-      const today = getAdjustedDate(rolloverHour);
+      const todayObj = getAdjustedDateObj(rolloverHour);
+      const today = formatDate(todayObj);
       console.log("today:", today);
 
       //曜日を判定
-      const dayType = getDayType(new Date(), rolloverHour); // "weekdays" or "weekend"
+      const dayType = getDayTypeFromAdjustedDate(todayObj); // "weekdays" or "weekend"
 
       // ✅ rollover 処理(昨日の未完了を保存、古い progress 削除)
       await rolloverProgress(userId, rolloverHour);
@@ -398,7 +459,7 @@ export default function HomePage() {
     if (!user?.id) return;
     try {
       //今日の日付を取得(rollover基準)
-      const adjustedDate = getAdjustedDate(dayRolloverHour); //日付を決定
+      const adjustedDate = getAdjustedDateObj(dayRolloverHour); //日付を決定
 
       const newDone = !todo.is_done;
 
@@ -679,9 +740,10 @@ export default function HomePage() {
         {/* リンク */}
         <div className="flex flex-col sm:flex-row justify-center gap-4 mt-6">
           {/* 休日学習プラン モーダル */}
-          {weekend ? (
+          {dayType === "weekend" ? (
             // 👉 休日なので「平日プラン」をモーダルで表示
             <TodoModal
+              key={`modal-weekday-${dayType}-${weekdayTodos.length}`} //ボタンラベルが変わらない場合があるのでkeyで強制再生成
               todos={weekdayTodos}
               mode="weekday"
               buttonLabel="平日todoを確認"
@@ -689,6 +751,7 @@ export default function HomePage() {
           ) : (
             // 👉 平日なので「休日プラン」をモーダルで表示
             <TodoModal
+              key={`modal-weekend-${dayType}-${weekendTodos.length}`} //ボタンラベルが変わらない場合があるのでkeyで強制再生成
               todos={weekendTodos}
               mode="weekend"
               buttonLabel="休日todoを確認"
