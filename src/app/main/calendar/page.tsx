@@ -12,6 +12,9 @@ import {
   parseISO,
   differenceInCalendarDays,
   startOfDay,
+  subMonths,
+  addMonths,
+  eachWeekOfInterval,
 } from "date-fns";
 import { BookOpen, Plus } from "lucide-react";
 
@@ -44,8 +47,9 @@ export default function CalendarWithPlansAndNotes() {
   const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const [month, setMonth] = useState(new Date());
 
   // モーダル管理
   const [open, setOpen] = useState(false);
@@ -56,7 +60,6 @@ export default function CalendarWithPlansAndNotes() {
     color: "bg-purple-400",
   });
 
-  const month = new Date(2025, 8); // 2025年9月
   const monthStart = startOfMonth(month);
   const monthEnd = endOfMonth(month);
 
@@ -71,11 +74,17 @@ export default function CalendarWithPlansAndNotes() {
     current = addDays(current, 1);
   }
 
-  // 週ごとに分割
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
-  }
+  // 📅 月を前後に移動
+  const handlePrevMonth = () => setMonth(subMonths(month, 1));
+  const handleNextMonth = () => setMonth(addMonths(month, 1));
+
+  // 📅 その月の週リストを再計算
+  const weeks = eachWeekOfInterval({
+    start: startOfWeek(startOfMonth(month), { weekStartsOn: 0 }),
+    end: endOfWeek(endOfMonth(month), { weekStartsOn: 0 }),
+  }).map((weekStart) =>
+    Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+  );
 
   // ✅ 学習時間マッピング用 state
   const [dailyStudy, setDailyStudy] = useState<Record<string, number>>({});
@@ -163,7 +172,13 @@ export default function CalendarWithPlansAndNotes() {
     const fetchRecords = async () => {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error("ユーザー取得エラー:", userError);
+        return;
+      }
 
       if (!user) {
         console.error("ログインユーザーなし");
@@ -177,14 +192,22 @@ export default function CalendarWithPlansAndNotes() {
 
       if (error) {
         console.error("データ取得失敗:", error);
+        return;
       }
-      // 日付ごとにグルーピング
+
+      if (!data || data.length === 0) {
+        console.log("データなし");
+        setDailyRecords({});
+        return;
+      }
+
+      // 日ごとの表示するため、日付ごとにグルーピング
       const grouped: Record<string, string[]> = {};
-      data.forEach((rec: any) => {
+      for (const rec of data) {
         const day = format(new Date(rec.created_at), "yyyy-MM-dd");
         if (!grouped[day]) grouped[day] = [];
         grouped[day].push(rec.title);
-      });
+      }
 
       setDailyRecords(grouped);
     };
@@ -313,44 +336,54 @@ export default function CalendarWithPlansAndNotes() {
           </div>
 
           {/* 右側: 入力フォームと予定追加ボタン */}
-          <div className="flex flex-col sm:flex-row items-end gap-4">
+          <div className="flex flex-col  items-end gap-4">
             {/* 勉強時間入力フォーム */}
-            <div className="flex flex-col gap-2 border p-4  rounded-lg w-full sm:w-auto">
-              <p className="text-sm font-semibold text-gray-700">
-                🕐今日の学習時間を入力
-              </p>
-              <div className="flex gap-3 items-center">
-                <Select
-                  value={hours.toString()}
-                  onValueChange={(v) => setHours(Number(v))}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue placeholder="時間" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 13 }, (_, i) => (
-                      <SelectItem key={i} value={i.toString()}>
-                        {i} 時間
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
 
-                <Select
-                  value={minutes.toString()}
-                  onValueChange={(v) => setMinutes(Number(v))}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue placeholder="分" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
-                      <SelectItem key={m} value={m.toString()}>
-                        {m} 分
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button className="rounded-full bg-green-500 hover:bg-green-600 px-6 py-3 text-base">
+                  <Plus size={20} className="mr-1" />
+                  学習時間を入力
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="w-full max-w-md">
+                <DialogHeader>
+                  <DialogTitle>🕐今日の学習時間を入力</DialogTitle>
+                </DialogHeader>
+
+                <div className="flex items-center gap-4 mt-2">
+                  <Select
+                    value={hours.toString()}
+                    onValueChange={(v) => setHours(Number(v))}
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue placeholder="時間" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 13 }, (_, i) => (
+                        <SelectItem key={i} value={i.toString()}>
+                          {i} 時間
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={minutes.toString()}
+                    onValueChange={(v) => setMinutes(Number(v))}
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue placeholder="分" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
+                        <SelectItem key={m} value={m.toString()}>
+                          {m} 分
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <Button
                   onClick={handleSaveStudyTime}
@@ -358,8 +391,8 @@ export default function CalendarWithPlansAndNotes() {
                 >
                   保存
                 </Button>
-              </div>
-            </div>
+              </DialogContent>
+            </Dialog>
 
             {/* 予定追加ボタン */}
             <Dialog open={open} onOpenChange={setOpen}>
@@ -568,6 +601,17 @@ export default function CalendarWithPlansAndNotes() {
           </Dialog>
         </div>
 
+        {/* 📅 月切り替えヘッダー */}
+        <div className="flex justify-center items-center gap-4 my-4">
+          <Button variant="outline" onClick={handlePrevMonth}>
+            ← 前の月
+          </Button>
+          <h2 className="text-xl font-bold">{format(month, "yyyy年 M月")}</h2>
+          <Button variant="outline" onClick={handleNextMonth}>
+            次の月 →
+          </Button>
+        </div>
+
         {/* 曜日ヘッダー */}
         <div className="grid grid-cols-7 text-center font-semibold text-gray-600 mb-2">
           {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
@@ -650,84 +694,120 @@ export default function CalendarWithPlansAndNotes() {
 
               {/* 週全体のバーをまとめて描画 */}
               <div className="absolute bottom-1 inset-x-0 grid grid-cols-7 gap-1 z-20 pointer-events-none">
-                {weekPlans.map((plan, pi) => {
-                  const barStart = startOfDay(
-                    plan.start > weekStart ? plan.start : weekStart
-                  );
-                  const barEnd = startOfDay(
-                    plan.end < weekEnd ? plan.end : weekEnd
-                  );
-
-                  const startIndex = week.findIndex(
-                    (d) =>
-                      format(startOfDay(d), "yyyy-MM-dd") ===
-                      format(barStart, "yyyy-MM-dd")
-                  );
-                  const endIndex = week.findIndex(
-                    (d) =>
-                      format(startOfDay(d), "yyyy-MM-dd") ===
-                      format(barEnd, "yyyy-MM-dd")
-                  );
-
-                  const barHeight = 16; // h-4
+                {(() => {
+                  const barHeight = 16;
                   const barGap = 2;
 
-                  // 重なり検出
-                  const overlaps = weekPlans
-                    .filter((p) => {
-                      const pStart = startOfDay(
-                        p.start > weekStart ? p.start : weekStart
-                      );
-                      const pEnd = startOfDay(
-                        p.end < weekEnd ? p.end : weekEnd
-                      );
-                      return !(pEnd < barStart || pStart > barEnd);
-                    })
-                    .sort((a, b) => {
-                      const lenA =
-                        differenceInCalendarDays(
-                          a.end < weekEnd ? a.end : weekEnd,
-                          a.start > weekStart ? a.start : weekStart
-                        ) + 1;
-                      const lenB =
-                        differenceInCalendarDays(
-                          b.end < weekEnd ? b.end : weekEnd,
-                          b.start > weekStart ? b.start : weekStart
-                        ) + 1;
-                      return lenB - lenA;
-                    });
+                  //週内のバー情報を展開
+                  const positionedBars: {
+                    plan: any;
+                    startIndex: number;
+                    endIndex: number;
+                    bottomOffset: number;
+                  }[] = [];
 
-                  const localIndex = overlaps.findIndex((p) => p === plan);
-                  const maxIndex = overlaps.length - 1;
-                  const bottomOffset =
-                    (maxIndex - localIndex) * (barHeight + barGap);
+                  weekPlans.map((plan) => {
+                    const barStart = startOfDay(
+                      plan.start > weekStart ? plan.start : weekStart
+                    );
+                    const barEnd = startOfDay(
+                      plan.end < weekEnd ? plan.end : weekEnd
+                    );
 
-                  return (
-                    <div
-                      key={pi}
-                      onClick={() => {
-                        setSelectedPlan(plan);
-                        setEditOpen(true);
-                      }}
-                      className={`${plan.color} bg-opacity-60 h-4 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
-                      style={{
-                        gridColumnStart: startIndex + 1,
-                        gridColumnEnd: endIndex + 2,
-                        bottom: `${bottomOffset}px`,
-                      }}
-                    >
-                      {startIndex === 0 ||
-                      format(plan.start, "yyyy-MM-dd") ===
+                    const startIndex = week.findIndex(
+                      (d) =>
+                        format(startOfDay(d), "yyyy-MM-dd") ===
                         format(barStart, "yyyy-MM-dd")
-                        ? plan.title
-                        : ""}
-                    </div>
+                    );
+                    const endIndex = week.findIndex(
+                      (d) =>
+                        format(startOfDay(d), "yyyy-MM-dd") ===
+                        format(barEnd, "yyyy-MM-dd")
+                    );
+
+                    //既に積まれてるバーと比較して、重なりがない最下段を探す
+                    let offsetLevel = 0;
+                    while (
+                      positionedBars.some((b) => {
+                        const overlap =
+                          !(
+                            b.endIndex < startIndex || b.startIndex > endIndex
+                          ) &&
+                          b.bottomOffset === offsetLevel * (barHeight + barGap);
+                        return overlap;
+                      })
+                    ) {
+                      offsetLevel++;
+                    }
+
+                    positionedBars.push({
+                      plan,
+                      startIndex,
+                      endIndex,
+                      bottomOffset: offsetLevel * (barHeight + barGap),
+                    });
+                  });
+
+                  // === 3️⃣ 計算済みバーを描画 ===
+                  return positionedBars.map(
+                    ({ plan, startIndex, endIndex, bottomOffset }, i) => (
+                      <div
+                        key={i}
+                        onClick={() => {
+                          setSelectedPlan(plan);
+                          setEditOpen(true);
+                        }}
+                        className={`${plan.color} bg-opacity-70 h-5 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
+                        style={{
+                          gridColumnStart: startIndex + 1,
+                          gridColumnEnd: endIndex + 2,
+                          bottom: `${bottomOffset}px`,
+                        }}
+                      >
+                        {startIndex === 0 ||
+                        format(plan.start, "yyyy-MM-dd") ===
+                          format(startOfDay(week[startIndex]), "yyyy-MM-dd")
+                          ? plan.title
+                          : ""}
+                      </div>
+                    )
                   );
-                })}
+                })()}
               </div>
             </div>
           );
         })}
+
+        {/* 📘 ノート表示エリア */}
+        {selectedNote && (
+          <div className="mt-6 bg-white rounded-lg shadow p-4 max-w-4xl mx-auto">
+            <h2 className="text-lg font-bold text-gray-800 mb-2">
+              🗓 {selectedNote} のノート
+            </h2>
+
+            {dailyRecords[selectedNote]?.length ? (
+              <ul className="list-disc list-inside space-y-1">
+                {dailyRecords[selectedNote].map((title, idx) => (
+                  <li key={idx} className="text-gray-700 text-sm">
+                    {title}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-500 text-sm">ノートがありません。</p>
+            )}
+
+            <div className="mt-3 flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setSelectedNote(null)}
+                className="text-gray-600"
+              >
+                閉じる
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

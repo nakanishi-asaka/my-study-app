@@ -24,10 +24,6 @@ import { isWeekend } from "date-fns";
 import TodoList from "../components/TodoList";
 import TodoModal from "../components/TodoModal";
 
-type Profile = {
-  exam_date: string | null;
-};
-
 //学習統計の型
 type StudyStats = {
   weekly_hours: number;
@@ -37,17 +33,10 @@ type StudyStats = {
   weekend_minutes: number;
 };
 
-//平日/休日判定を adjustedDate だけで行う
+//平日/休日判定
 function getDayTypeFromAdjustedDate(date: Date): "weekdays" | "weekend" {
   const day = date.getDay(); // 0=日, 6=土
   return day === 0 || day === 6 ? "weekend" : "weekdays";
-}
-
-//試験日カウントダウン
-function getCountdown(targetDate: Date) {
-  const today = new Date();
-  const diff = targetDate.getTime() - today.getTime();
-  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
 // ユーザーごとの adjusted_date を計算する関数
@@ -79,6 +68,13 @@ function formatDate(date: Date): string {
   ].join("-");
 }
 
+//試験日カウントダウンの計算
+function getCountdown(targetDate: Date) {
+  const today = new Date();
+  const diff = targetDate.getTime() - today.getTime();
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
 export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [examDate, setExamDate] = useState<Date | null>(null);
@@ -103,7 +99,6 @@ export default function HomePage() {
 
   //モーダルでtodo表示用
   const today = new Date();
-  const weekend = isWeekend(today); // 土日かどうか判定
 
   // ✅ クライアント側で session を取得してユーザー設定 + デバッグ
   useEffect(() => {
@@ -230,7 +225,7 @@ export default function HomePage() {
     );
   }, [dayRolloverHour]);
 
-  //モーダルのtodo取得
+  //モーダル表示用のtodo取得
   useEffect(() => {
     if (!dayType || !user) return;
 
@@ -267,9 +262,12 @@ export default function HomePage() {
   }, [dayType, user]);
 
   // progress の rollover(過去分の処理)
-  const rolloverProgress = async (userId: string, rolloverHour: number) => {
-    const todayObj = getAdjustedDateObj(rolloverHour);
-    const today = formatDate(todayObj); // YYYY-MM-DD
+  const rolloverProgress = async (
+    userId: string,
+    rolloverHour: number,
+    todayObj: Date
+  ) => {
+    const today = formatDate(todayObj); //YYYY-MM-DD
 
     // 昨日以前を取得
     const { data: oldProgress, error: fetchError } = await supabase
@@ -295,7 +293,7 @@ export default function HomePage() {
           template_id: p.template_id,
           is_done: false,
           title: p.todo_templates?.title ?? "",
-          date: p.adjusted_date, //当日扱いの日付
+          date: formatDate(new Date(p.adjusted_date)), //当日扱いの日付、UTCズレ防止
         }));
 
         // ✅ insert → エラーなら削除しない（データ喪失防止）
@@ -357,7 +355,7 @@ export default function HomePage() {
       const dayType = getDayTypeFromAdjustedDate(todayObj); // "weekdays" or "weekend"
 
       // ✅ rollover 処理(昨日の未完了を保存、古い progress 削除)
-      await rolloverProgress(userId, rolloverHour);
+      await rolloverProgress(userId, rolloverHour, todayObj);
 
       // 今日の progress を取得(なければ作成、あったら差分調整)
       const { data: existing } = await supabase
@@ -460,6 +458,7 @@ export default function HomePage() {
     try {
       //今日の日付を取得(rollover基準)
       const adjustedDate = getAdjustedDateObj(dayRolloverHour); //日付を決定
+      const formattedDate = formatDate(adjustedDate); //DBのdate型に合わせる
 
       const newDone = !todo.is_done;
 
@@ -485,7 +484,7 @@ export default function HomePage() {
                 template_id: todo.template_id,
                 is_done: true,
                 title: todo.todo_templates.title ?? "",
-                date: adjustedDate,
+                date: formattedDate,
               },
             ],
             { onConflict: "user_id,template_id,date" }
@@ -499,7 +498,7 @@ export default function HomePage() {
           .delete()
           .eq("user_id", user.id)
           .eq("template_id", todo.template_id)
-          .eq("date", adjustedDate);
+          .eq("date", formattedDate);
 
         if (deleteError) throw deleteError;
       }
@@ -554,6 +553,7 @@ export default function HomePage() {
   // 削除（is_active=false）
   const handleDelete = async (id: number, templateId: number | null) => {
     if (!user?.id) return;
+
     if (!confirm("本当に削除しますか？")) return;
     try {
       if (templateId) {

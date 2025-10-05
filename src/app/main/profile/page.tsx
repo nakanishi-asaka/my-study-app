@@ -207,7 +207,7 @@ export default function ProfilePage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="例：nakani_shi"
+                placeholder="例：てすと・ユーザー・太郎"
                 aria-label="ユーザー名"
                 className="mt-2 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />

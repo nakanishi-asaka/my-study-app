@@ -68,7 +68,6 @@ export default function TodoModal({ todos, mode, buttonLabel }: Props) {
               ))}
             </ul>
           )}
-          <p>Button label inside modal: {buttonLabel}</p>
         </DialogContent>
       </Dialog>
     </div>

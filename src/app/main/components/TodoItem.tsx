@@ -2,6 +2,18 @@
 
 import { Button } from "@/components/ui/button";
 import { Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type Todo = {
   id: string;
@@ -23,6 +35,12 @@ export default function TodoItem({
   onEdit,
   onDelete,
 }: TodoItemProps) {
+  const [open, setOpen] = useState(false);
+
+  const handleDelete = () => {
+    onDelete(todo.id, todo.template_id);
+    setOpen(false);
+  };
   return (
     <li
       key={todo.id}
@@ -32,6 +50,8 @@ export default function TodoItem({
           : "bg-gray-50 hover:bg-gray-100"
       }`}
     >
+      {/* チェックボックス＆タイトル*/}
+
       <div className="flex items-center gap-3 flex-1">
         <input
           type="checkbox"
@@ -43,23 +63,61 @@ export default function TodoItem({
         <span>{todo.title}</span>
       </div>
       <div className="flex gap-2">
+        {/* 編集ボタン：完了済みなら無効化 */}
         <Button
           size="icon"
           variant="outline"
+          disabled={todo.is_done}
           onClick={(e) => {
             e.stopPropagation();
-            onEdit(todo);
+            if (!todo.is_done) onEdit(todo);
           }}
         >
           <Pencil className="w-4 h-4" />
         </Button>
-        <Button
-          size="icon"
-          variant="destructive"
-          onClick={() => onDelete(todo.id, todo.template_id)}
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        {/* 削除ボタン：完了済みなら確認ダイアログを表示 */}
+
+        {todo.is_done ? (
+          <AlertDialog open={open} onOpenChange={setOpen}>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="icon"
+                variant="destructive"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>完了済みタスクの削除</AlertDialogTitle>
+                <AlertDialogDescription>
+                  このタスクは完了済みです。削除しても履歴は残りますが、
+                  一覧からは非表示になります。
+                  <br />
+                  本当に削除しますか？
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete}>
+                  削除する
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <Button
+            size="icon"
+            variant="destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(todo.id, todo.template_id);
+            }}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
       </div>
     </li>
   );
