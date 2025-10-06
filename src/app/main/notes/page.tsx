@@ -1,26 +1,39 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import { supabase } from "../../supabaseClient";
 import { Pin, PinOff, X } from "lucide-react";
 
-type Record = {
+//supabaseから取ってくる用(DBと同じ型)
+type StudyRecord = {
   id: number;
+  user_id: string;
   type: "note" | "link" | "image" | "book";
   title: string;
   content?: string;
   url?: string;
-  image_path?: string;
-  image_signed_url?: string;
-  author?: string;
+  image_url?: string | File | null;
+  author?: string | null;
   pinned: boolean;
   created_at: string; // Supabase returns ISO string for timestamps
 };
 
+//入力フォーム用の型
+type NewStudyRecord = Omit<
+  StudyRecord,
+  "id" | "user_id" | "pinned" | "created_at"
+> & {
+  image_url?: string | File | null;
+};
+
+// 表示用に拡張した型（サインドURLなどを追加）
+export type StudyRecordWithSignedUrl = StudyRecord & {
+  image_signed_url?: string;
+};
+
 export default function NotesPage() {
   const [user, setUser] = useState<any>(null);
-  const [records, setRecords] = useState<Record[]>([]);
+  const [records, setRecords] = useState<StudyRecordWithSignedUrl[]>([]);
   const [searchTerm, setSearchTerm] = useState(""); // 🔍 検索キーワード
   const [sortKey, setSortKey] = useState<"created_at" | "title">("created_at"); // ↕️ ソート対象
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // 並
@@ -28,13 +41,13 @@ export default function NotesPage() {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<Partial<Record>>({});
-  const [newRecord, setNewRecord] = useState({
+  const [editValues, setEditValues] = useState<Partial<StudyRecord>>({});
+  const [newRecord, setNewRecord] = useState<NewStudyRecord>({
     type: "note",
     title: "",
     content: "",
     url: "",
-    image_url: "",
+    image_url: null,
     author: "",
   });
 
@@ -90,19 +103,24 @@ export default function NotesPage() {
       }
 
       // ✅ 画像の signedUrl を発行
-      const recordsWithUrls = await Promise.all(
-        (data ?? []).map(async (r: any) => {
+      const recordsWithUrls: StudyRecordWithSignedUrl[] = await Promise.all(
+        (data ?? []).map(async (r) => {
           if (r.type === "image" && r.image_url) {
-            const { data: urlData } = await supabase.storage
+            const { data: urlData, error: urlError } = await supabase.storage
               .from("record_images")
               .createSignedUrl(r.image_url, 60 * 60); // 1時間有効
-            return { ...r, image_signed_url: urlData?.signedUrl };
+
+            if (urlError) {
+              console.warn("Signed URL 生成失敗:", urlError.message);
+              return r;
+            }
+            return { ...r, image_signed_url: urlData.signedUrl };
           }
           return r;
         })
       );
 
-      setRecords(recordsWithUrls as Record[]);
+      setRecords(recordsWithUrls);
     };
 
     fetchRecords();
@@ -143,6 +161,8 @@ export default function NotesPage() {
   //ノートを追加
   const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    //ユーザー取得
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -153,6 +173,8 @@ export default function NotesPage() {
     }
 
     let imageUrl = "";
+
+    // 画像アップロード処理
     if (newRecord.type === "image" && newRecord.image_url instanceof File) {
       const file = newRecord.image_url;
 
@@ -195,7 +217,7 @@ export default function NotesPage() {
       return;
     }
     // 成功したら state に追加
-    setRecords([data as Record, ...records]);
+    setRecords([data as StudyRecord, ...records]);
 
     // フォームリセット
     setNewRecord({
@@ -334,7 +356,10 @@ export default function NotesPage() {
               <select
                 value={newRecord.type}
                 onChange={(e) =>
-                  setNewRecord({ ...newRecord, type: e.target.value })
+                  setNewRecord({
+                    ...newRecord,
+                    type: e.target.value as "note" | "link" | "image" | "book",
+                  })
                 }
                 className="mt-1 w-full border rounded px-2 py-1"
               >
@@ -385,7 +410,7 @@ export default function NotesPage() {
             {newRecord.type === "book" && (
               <input
                 type="text"
-                value={newRecord.author}
+                value={newRecord.author ?? ""}
                 onChange={(e) =>
                   setNewRecord({ ...newRecord, author: e.target.value })
                 }
@@ -518,7 +543,7 @@ export default function NotesPage() {
                           src={r.image_signed_url}
                           alt={r.title}
                           className="mt-2 w-24 h-24 object-cover rounded-lg cursor-pointer border hover:opacity-80"
-                          onClick={() => setModalImage(r.image_signed_url)}
+                          onClick={() => setModalImage(r.image_signed_url!)}
                         />
                       )}
                     </>
@@ -579,7 +604,10 @@ export default function NotesPage() {
                             console.error("Delete error:", error.message);
                             return;
                           }
-                          if (r.type === "image" && r.image_url) {
+                          if (
+                            r.type === "image" &&
+                            typeof r.image_url === "string"
+                          ) {
                             const { error: storageError } =
                               await supabase.storage
                                 .from("record_images")
