@@ -6,4 +6,8 @@ export type Todo = {
   template_id: string | null;
   is_done: boolean;
   updated_at?: string;
+  todo_templates?: {
+    id: string;
+    title: string;
+  } | null;
 };

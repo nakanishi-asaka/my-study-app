@@ -20,9 +20,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { isWeekend } from "date-fns";
 import TodoList from "../components/TodoList";
 import TodoModal from "../components/TodoModal";
+import { fetchTodos, toggleTodo } from "@/lib/data";
+import {
+  getAdjustedDateObj,
+  getDayTypeFromAdjustedDate,
+} from "../../../lib/utils/date";
+import { Todo } from "@/types/todo";
 
 //学習統計の型
 type StudyStats = {
@@ -33,51 +38,13 @@ type StudyStats = {
   weekend_minutes: number;
 };
 
-// progress の型
-type ProgressRow = {
-  id: number;
-  template_id: string;
-  is_done: boolean;
-  adjusted_date: string;
-  todo_templates?: {
-    title?: string | null;
-  } | null;
+export type DayType = "weekdays" | "weekend";
+
+export type TodayInfo = {
+  adjustedDate: Date;
+  formattedDate: string;
+  dayType: DayType;
 };
-
-//平日/休日判定
-function getDayTypeFromAdjustedDate(date: Date): "weekday" | "weekend" {
-  const day = date.getDay(); // 0=日, 6=土
-  return day === 0 || day === 6 ? "weekend" : "weekday";
-}
-
-// ユーザーごとの adjusted_date を計算する関数
-// getAdjustedDate を Date オブジェクトで返す
-function getAdjustedDateObj(dayRolloverHour: number): Date {
-  const now = new Date();
-  const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3;
-
-  const adjusted = new Date(now);
-
-  if (now.getHours() < rollover) {
-    // rollover 時刻前なら「前日」を返す
-    adjusted.setDate(adjusted.getDate() - 1);
-  }
-
-  return new Date(
-    adjusted.getFullYear(),
-    adjusted.getMonth(),
-    adjusted.getDate()
-  ); // 時刻部分を切り捨て
-}
-
-// YYYY-MM-DD に変換（DBのdate型に揃える）UTC基準に依存しない
-function formatDate(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
 
 //試験日カウントダウンの計算
 function getCountdown(targetDate: Date) {
@@ -106,23 +73,22 @@ export default function HomePage() {
   const [weekdayTodos, setWeekdayTodos] = useState<any[]>([]);
   const [weekendTodos, setWeekendTodos] = useState<any[]>([]);
 
-  const [dayType, setDayType] = useState<"weekday" | "weekend">("weekday");
-
-  //モーダルでtodo表示用
-  const today = new Date();
+  const [dayType, setDayType] = useState<"weekdays" | "weekend">("weekdays");
 
   // ✅ クライアント側で session を取得してユーザー設定 + デバッグ
   useEffect(() => {
     const init = async () => {
       const { data, error } = await supabase.auth.getSession();
-      console.log("getSession result:", data); // デバッグ出力
       if (error) console.error("getSession error:", error);
       if (!data?.session) {
         console.warn("未ログイン状態 (getSession)");
       } else {
         console.log("ログイン済みユーザー:", data.session.user);
         setUser(data.session.user);
-        await fetchTodos(data.session.user.id);
+
+        //データを受け取ってsetTodosに渡す
+        const todos = await fetchTodos(data.session.user.id, dayRolloverHour);
+        setTodos(todos);
       }
     };
     init();
@@ -131,7 +97,6 @@ export default function HomePage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event, session);
       if (session?.user) {
         setUser(session.user);
       } else {
@@ -214,10 +179,6 @@ export default function HomePage() {
   }, [user]);
 
   //モーダルでtodo表示用
-  // ✅ 調整済みの日付
-  const adjustedDate = getAdjustedDateObj(dayRolloverHour);
-
-  // ✅ 平日/休日を判定
 
   // dayType の算出を useEffect に移動
   useEffect(() => {
@@ -272,254 +233,11 @@ export default function HomePage() {
     fetchTodosForModal();
   }, [dayType, user]);
 
-  // progress の rollover(過去分の処理)
-  const rolloverProgress = async (
-    userId: string,
-    rolloverHour: number,
-    todayObj: Date
-  ) => {
-    const today = formatDate(todayObj); //YYYY-MM-DD
-
-    // 昨日以前を取得(todo_templatesとリレーション)
-    const { data: oldProgress, error: fetchError } = await supabase
-      .from("todo_progress")
-      .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
-      .eq("user_id", userId)
-      .lt("adjusted_date", today) // ← DB側でdate型なのでOK
-      .overrideTypes<ProgressRow[], { merge: false }>();
-
-    if (fetchError) {
-      console.error("Failed to fetch old progress:", fetchError);
-      return;
-    }
-    if (!oldProgress || oldProgress.length === 0) return;
-
-    console.log("oldProgress:", oldProgress);
-
-    if (oldProgress && oldProgress.length > 0) {
-      // 未完了だけ records に保存
-      const unfinished = oldProgress.filter((p) => !p.is_done);
-      if (unfinished.length > 0) {
-        const insertRows = unfinished.map((p) => ({
-          user_id: userId,
-          template_id: p.template_id,
-          is_done: false,
-          title: p.todo_templates?.title ?? "",
-          date: formatDate(new Date(p.adjusted_date)), //当日扱いの日付、UTCズレ防止
-        }));
-
-        // ✅ insert → エラーなら削除しない（データ喪失防止）
-        const { error: insertError } = await supabase
-          .from("todo_records")
-          .upsert(insertRows, { onConflict: "user_id,template_id,date" });
-
-        if (insertError) {
-          console.error(
-            "Failed to insert unfinished todos into records:",
-            insertError
-          );
-          return; // ❌ insert失敗なら削除しない
-        }
-      }
-
-      console.log("today (delete cutoff):", today, typeof today);
-
-      const { data: checkBeforeDelete } = await supabase
-        .from("todo_progress")
-        .select("id, adjusted_date")
-        .eq("user_id", userId)
-        .lt("adjusted_date", today);
-
-      console.log("to be deleted:", checkBeforeDelete);
-
-      // ✅ insert 成功したら古い progress を削除
-      const { error: deleteError } = await supabase
-        .from("todo_progress")
-        .delete()
-        .eq("user_id", userId)
-        .lt("adjusted_date", today);
-
-      if (deleteError) {
-        console.error("Failed to delete old progress:", deleteError);
-      }
-    }
-  };
-
-  // 最新の todo を取得
-  const fetchTodos = async (userId: string) => {
+  //todo完了
+  const handleToggle = async (todo: Todo) => {
     setLoading(true);
-    try {
-      // 1. ユーザーの rolloverHour を取得
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("day_rollover_hour")
-        .eq("id", userId)
-        .single();
-
-      const rolloverHour = profile?.day_rollover_hour ?? 3; // デフォルト3時
-
-      //今日の日付を取得(rollover基準なので、深夜は前日扱い)
-      const todayObj = getAdjustedDateObj(rolloverHour);
-      const today = formatDate(todayObj);
-      console.log("today:", today);
-
-      //曜日を判定
-      const dayType = getDayTypeFromAdjustedDate(todayObj); // "weekdays" or "weekend"
-
-      // ✅ rollover 処理(昨日の未完了を保存、古い progress 削除)
-      await rolloverProgress(userId, rolloverHour, todayObj);
-
-      // 今日の progress を取得(なければ作成、あったら差分調整)
-      const { data: existing } = await supabase
-        .from("todo_progress")
-        .select("id, template_id, is_done")
-        .eq("user_id", userId)
-        .eq("adjusted_date", today);
-
-      // ✅ 今日の templateを取得
-      const { data: templates } = await supabase
-        .from("todo_templates")
-        .select("id, title, repeat_type, is_active")
-        .eq("user_id", userId);
-
-      // dayType に合致する is_active=true の template を抽出
-      if (templates) {
-        const validTemplates = templates.filter(
-          (t) => t.repeat_type === dayType && t.is_active
-        );
-
-        if (!existing || existing.length === 0) {
-          // progress が無ければ新規生成（リセット）
-          const insertRows = validTemplates.map((t) => ({
-            user_id: userId,
-            template_id: t.id,
-            adjusted_date: today,
-            is_done: false,
-          }));
-          if (insertRows.length > 0) {
-            await supabase.from("todo_progress").upsert(insertRows, {
-              onConflict: "user_id,template_id,adjusted_date", // 重複回避
-            });
-          }
-        } else {
-          // progress がある場合 → 差分調整
-          const existingIds = existing.map((e) => e.template_id);
-          const validIds = validTemplates.map((t) => t.id);
-
-          // is_active=false or repeat_type不一致 の progress を削除
-          const toDelete = existingIds.filter((id) => !validIds.includes(id));
-          if (toDelete.length > 0) {
-            await supabase
-              .from("todo_progress")
-              .delete()
-              .eq("user_id", userId)
-              .eq("adjusted_date", today)
-              .in("template_id", toDelete);
-          }
-
-          // 新しい todoがあれば、progress に追加
-          const toAdd = validTemplates.filter(
-            (t) => !existingIds.includes(t.id)
-          );
-          if (toAdd.length > 0) {
-            const insertRows = toAdd.map((t) => ({
-              user_id: userId,
-              template_id: t.id,
-              adjusted_date: today,
-              is_done: false,
-            }));
-            await supabase.from("todo_progress").insert(insertRows);
-          }
-        }
-      }
-
-      // 今日の progress を再取得
-      const { data, error } = await supabase
-        .from("todo_progress")
-        .select(
-          `id,
-         template_id,
-         is_done,
-         updated_at,
-         todo_templates(id,title)`
-        )
-        .eq("user_id", userId)
-        .eq("adjusted_date", today)
-        .order("updated_at", { ascending: true })
-        .overrideTypes<ProgressRow[], { merge: false }>();
-
-      if (error) throw error;
-
-      // title をフラット化
-      const normalized = (data || []).map((d) => ({
-        ...d,
-        title: d.todo_templates?.title ?? "",
-      }));
-
-      setTodos(normalized);
-    } catch (err) {
-      console.error("fetchTodos error:", err);
-      setTodos([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // todo完了切替
-  const toggleTodo = async (todo: any) => {
-    if (!user?.id) return;
-    try {
-      //今日の日付を取得(rollover基準)
-      const adjustedDate = getAdjustedDateObj(dayRolloverHour); //日付を決定
-      const formattedDate = formatDate(adjustedDate); //DBのdate型に合わせる
-
-      const newDone = !todo.is_done;
-
-      // progress 更新
-      const { error: progressError } = await supabase
-        .from("todo_progress")
-        .update({
-          is_done: newDone,
-          done_at: newDone ? new Date().toISOString() : null,
-        })
-        .eq("id", todo.id);
-
-      if (progressError) throw progressError;
-
-      if (newDone) {
-        // 完了 → 今日の日付でupsert
-        const { error: recordError } = await supabase
-          .from("todo_records")
-          .upsert(
-            [
-              {
-                user_id: user.id,
-                template_id: todo.template_id,
-                is_done: true,
-                title: todo.todo_templates.title ?? "",
-                date: formattedDate,
-              },
-            ],
-            { onConflict: "user_id,template_id,date" }
-          );
-
-        if (recordError) throw recordError;
-      } else {
-        // ❌ 取り消し → その日の records を削除
-        const { error: deleteError } = await supabase
-          .from("todo_records")
-          .delete()
-          .eq("user_id", user.id)
-          .eq("template_id", todo.template_id)
-          .eq("date", formattedDate);
-
-        if (deleteError) throw deleteError;
-      }
-
-      await fetchTodos(user.id);
-    } catch (err) {
-      console.error("toggleTodo error:", err);
-    }
+    await toggleTodo(user, todo, dayRolloverHour);
+    setLoading(false);
   };
 
   // todo 作成
@@ -550,7 +268,8 @@ export default function HomePage() {
 
       if (templateError) throw templateError;
 
-      await fetchTodos(user.id);
+      const todos = await fetchTodos(user.id, dayRolloverHour);
+      setTodos(todos);
 
       setTitle("");
       setRepeatType("weekdays");
@@ -578,7 +297,8 @@ export default function HomePage() {
           })
           .eq("id", templateId);
       }
-      await fetchTodos(user.id);
+      const todos = await fetchTodos(user.id, dayRolloverHour);
+      setTodos(todos);
     } catch (err) {
       console.error("delete error:", err);
     }
@@ -593,7 +313,9 @@ export default function HomePage() {
         .update({ title: editTitle })
         .eq("id", editTodo.template_id);
 
-      await fetchTodos(user.id);
+      const todos = await fetchTodos(user.id, dayRolloverHour);
+      setTodos(todos);
+
       setEditTodo(null);
       setEditTitle("");
     } catch (err) {
@@ -679,24 +401,16 @@ export default function HomePage() {
         </Dialog>
 
         {/* Todo一覧 */}
-        {loading ? (
-          <p className="text-gray-500">読み込み中...</p>
-        ) : todos.length === 0 ? (
-          <p className="text-gray-500 text-center">Todoがありません</p>
-        ) : (
-          <ul className="space-y-3">
-            <TodoList
-              todos={todos}
-              loading={loading}
-              onToggle={toggleTodo}
-              onEdit={(todo) => {
-                setEditTodo(todo);
-                setEditTitle(todo.title);
-              }}
-              onDelete={handleDelete}
-            />
-          </ul>
-        )}
+        <TodoList
+          todos={todos}
+          loading={loading}
+          onToggle={handleToggle}
+          onEdit={(todo) => {
+            setEditTodo(todo);
+            setEditTitle(todo.title);
+          }}
+          onDelete={handleDelete}
+        />
 
         {/* Todo追加モーダル */}
         <Dialog open={open} onOpenChange={(next) => setOpen(next)}>

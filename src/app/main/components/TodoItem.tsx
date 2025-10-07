@@ -38,7 +38,6 @@ export default function TodoItem({
   };
   return (
     <li
-      key={todo.id}
       className={`flex items-center gap-3 p-4 rounded-md shadow-sm cursor-pointer transition ${
         todo.is_done
           ? "bg-green-50 line-through text-gray-500"
@@ -52,7 +51,7 @@ export default function TodoItem({
           type="checkbox"
           checked={todo.is_done}
           readOnly
-          onClick={() => onToggle(todo)}
+          onChange={() => onToggle(todo)}
           className="w-5 h-5 cursor-pointer"
         />
         <span>{todo.title}</span>
@@ -83,6 +82,7 @@ export default function TodoItem({
                 <Trash2 className="w-4 h-4" />
               </Button>
             </AlertDialogTrigger>
+
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>完了済みタスクの削除</AlertDialogTitle>
@@ -107,7 +107,7 @@ export default function TodoItem({
             variant="destructive"
             onClick={(e) => {
               e.stopPropagation();
-              onDelete(todo.id, todo.template_id);
+              onDelete(todo.id, todo.template_id ?? null);
             }}
           >
             <Trash2 className="w-4 h-4" />

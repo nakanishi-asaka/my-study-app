@@ -4,7 +4,7 @@ import TodoItem from "./TodoItem";
 import { Todo } from "../../../types/todo";
 
 type TodoListProps = {
-  todos: Todo[];
+  todos: Todo[] | undefined;
   loading: boolean;
   onToggle: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
@@ -22,7 +22,7 @@ export default function TodoList({
     return <p className="text-gray-500">読み込み中...</p>;
   }
 
-  if (todos.length === 0) {
+  if (!todos || todos.length === 0) {
     return <p className="text-gray-500 text-center">Todoがありません</p>;
   }
 
