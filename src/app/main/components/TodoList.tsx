@@ -1,20 +1,14 @@
 "use client";
 
 import TodoItem from "./TodoItem";
-
-type Todo = {
-  id: string;
-  title: string;
-  is_done: boolean;
-  template_id?: string | null;
-};
+import { Todo } from "../../../types/todo";
 
 type TodoListProps = {
   todos: Todo[];
   loading: boolean;
   onToggle: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
-  onDelete: (id: string, templateId?: string | null) => void;
+  onDelete: (id: string, templateId: string | null) => void;
 };
 
 export default function TodoList({

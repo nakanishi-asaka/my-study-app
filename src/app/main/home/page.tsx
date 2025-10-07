@@ -33,10 +33,21 @@ type StudyStats = {
   weekend_minutes: number;
 };
 
+// progress の型
+type ProgressRow = {
+  id: number;
+  template_id: string;
+  is_done: boolean;
+  adjusted_date: string;
+  todo_templates?: {
+    title?: string | null;
+  } | null;
+};
+
 //平日/休日判定
-function getDayTypeFromAdjustedDate(date: Date): "weekdays" | "weekend" {
+function getDayTypeFromAdjustedDate(date: Date): "weekday" | "weekend" {
   const day = date.getDay(); // 0=日, 6=土
-  return day === 0 || day === 6 ? "weekend" : "weekdays";
+  return day === 0 || day === 6 ? "weekend" : "weekday";
 }
 
 // ユーザーごとの adjusted_date を計算する関数
@@ -269,12 +280,13 @@ export default function HomePage() {
   ) => {
     const today = formatDate(todayObj); //YYYY-MM-DD
 
-    // 昨日以前を取得
+    // 昨日以前を取得(todo_templatesとリレーション)
     const { data: oldProgress, error: fetchError } = await supabase
       .from("todo_progress")
       .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
       .eq("user_id", userId)
-      .lt("adjusted_date", today); // ← DB側でdate型なのでOK
+      .lt("adjusted_date", today) // ← DB側でdate型なのでOK
+      .overrideTypes<ProgressRow[], { merge: false }>();
 
     if (fetchError) {
       console.error("Failed to fetch old progress:", fetchError);
@@ -433,7 +445,8 @@ export default function HomePage() {
         )
         .eq("user_id", userId)
         .eq("adjusted_date", today)
-        .order("updated_at", { ascending: true });
+        .order("updated_at", { ascending: true })
+        .overrideTypes<ProgressRow[], { merge: false }>();
 
       if (error) throw error;
 
@@ -551,7 +564,7 @@ export default function HomePage() {
   };
 
   // 削除（is_active=false）
-  const handleDelete = async (id: number, templateId: number | null) => {
+  const handleDelete = async (id: string, templateId: string | null) => {
     if (!user?.id) return;
 
     if (!confirm("本当に削除しますか？")) return;

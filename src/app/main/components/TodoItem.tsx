@@ -15,18 +15,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-type Todo = {
-  id: string;
-  title: string;
-  is_done: boolean;
-  template_id?: string | null;
-};
+import { Todo } from "../../../types/todo";
 
 type TodoItemProps = {
   todo: Todo;
   onToggle: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
-  onDelete: (id: string, templateId?: string | null) => void;
+  onDelete: (id: string, templateId: string | null) => void;
 };
 
 export default function TodoItem({
