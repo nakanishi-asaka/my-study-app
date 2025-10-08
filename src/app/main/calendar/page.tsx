@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -52,7 +51,8 @@ export default function CalendarWithPlansAndNotes() {
   const [month, setMonth] = useState(new Date());
 
   // モーダル管理
-  const [open, setOpen] = useState(false);
+  const [studytimeOpen, setStudyTimeOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({
     title: "",
     start: "",
@@ -268,7 +268,7 @@ export default function CalendarWithPlansAndNotes() {
     }
 
     setNewPlan({ title: "", start: "", end: "", color: "bg-purple-400" });
-    setOpen(false);
+    setPlanOpen(false);
   };
 
   //study_sessionに学習時間を追加(日ごと合計を表示するので、1日に複数回ok)
@@ -301,9 +301,10 @@ export default function CalendarWithPlansAndNotes() {
       [today]: (prev[today] || 0) + totalMinutes,
     }));
 
-    alert(`${hours}時間${minutes}分を保存しました！`);
+    //フォームリセット＆モーダル閉じる
     setHours(0);
     setMinutes(0);
+    setStudyTimeOpen(false);
   };
 
   return (
@@ -337,125 +338,129 @@ export default function CalendarWithPlansAndNotes() {
 
           {/* 右側: 入力フォームと予定追加ボタン */}
           <div className="flex flex-col  items-end gap-4">
-            {/* 勉強時間入力フォーム */}
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button className="rounded-full bg-green-500 hover:bg-green-600 px-6 py-3 text-base">
-                  <Plus size={20} className="mr-1" />
-                  学習時間を入力
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="w-full max-w-md">
-                <DialogHeader>
-                  <DialogTitle>🕐今日の学習時間を入力</DialogTitle>
-                </DialogHeader>
-
-                <div className="flex items-center gap-4 mt-2">
-                  <Select
-                    value={hours.toString()}
-                    onValueChange={(v) => setHours(Number(v))}
-                  >
-                    <SelectTrigger className="w-28">
-                      <SelectValue placeholder="時間" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 13 }, (_, i) => (
-                        <SelectItem key={i} value={i.toString()}>
-                          {i} 時間
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select
-                    value={minutes.toString()}
-                    onValueChange={(v) => setMinutes(Number(v))}
-                  >
-                    <SelectTrigger className="w-28">
-                      <SelectValue placeholder="分" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
-                        <SelectItem key={m} value={m.toString()}>
-                          {m} 分
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button
-                  onClick={handleSaveStudyTime}
-                  className="bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
-                >
-                  保存
-                </Button>
-              </DialogContent>
-            </Dialog>
+            {/* 学習時間ボタン */}
+            <Button
+              onClick={() => setStudyTimeOpen(true)}
+              className="rounded-full bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
+            >
+              <Plus size={20} className="mr-1" />
+              学習時間を入力
+            </Button>
 
             {/* 予定追加ボタン */}
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button className="rounded-full bg-orange-500 hover:bg-orange-600 px-6 py-3 text-base">
-                  <Plus size={20} className="mr-1" />
-                  予定追加
-                </Button>
-              </DialogTrigger>
-              {/* ...モーダルの中身はそのまま... */}
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>新しい予定を追加</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <Input
-                    placeholder="タイトル"
-                    value={newPlan.title}
-                    onChange={(e) =>
-                      setNewPlan({ ...newPlan, title: e.target.value })
-                    }
-                  />
-                  <Input
-                    type="date"
-                    value={newPlan.start}
-                    onChange={(e) =>
-                      setNewPlan({ ...newPlan, start: e.target.value })
-                    }
-                  />
-                  <Input
-                    type="date"
-                    value={newPlan.end}
-                    onChange={(e) =>
-                      setNewPlan({ ...newPlan, end: e.target.value })
-                    }
-                  />
-                  <Select
-                    value={newPlan.color}
-                    onValueChange={(v) => setNewPlan({ ...newPlan, color: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="色を選択" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bg-purple-400">紫</SelectItem>
-                      <SelectItem value="bg-blue-400">青</SelectItem>
-                      <SelectItem value="bg-green-400">緑</SelectItem>
-                      <SelectItem value="bg-red-400">赤</SelectItem>
-                      <SelectItem value="bg-yellow-400">黄</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setOpen(false)}>
-                      キャンセル
-                    </Button>
-                    <Button onClick={handleAddPlan} className="bg-orange-500">
-                      追加
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button
+              onClick={() => setPlanOpen(true)}
+              className="rounded-full bg-orange-500 hover:bg-orange-600 px-6 py-3 text-base"
+            >
+              <Plus size={20} className="mr-1" />
+              予定追加
+            </Button>
           </div>
+
+          {/* 勉強時間入力フォーム */}
+          <Dialog open={studytimeOpen} onOpenChange={setStudyTimeOpen}>
+            <DialogContent className="w-full max-w-md">
+              <DialogHeader>
+                <DialogTitle>🕐今日の学習時間を入力</DialogTitle>
+              </DialogHeader>
+
+              <div className="flex items-center gap-4 mt-2">
+                <Select
+                  value={hours.toString()}
+                  onValueChange={(v) => setHours(Number(v))}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue placeholder="時間" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 13 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString()}>
+                        {i} 時間
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={minutes.toString()}
+                  onValueChange={(v) => setMinutes(Number(v))}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue placeholder="分" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
+                      <SelectItem key={m} value={m.toString()}>
+                        {m} 分
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                onClick={handleSaveStudyTime}
+                className="bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
+              >
+                保存
+              </Button>
+            </DialogContent>
+          </Dialog>
+
+          {/* 予定追加モーダル */}
+          <Dialog open={planOpen} onOpenChange={setPlanOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>新しい予定を追加</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Input
+                  placeholder="タイトル"
+                  value={newPlan.title}
+                  onChange={(e) =>
+                    setNewPlan({ ...newPlan, title: e.target.value })
+                  }
+                />
+                <Input
+                  type="date"
+                  value={newPlan.start}
+                  onChange={(e) =>
+                    setNewPlan({ ...newPlan, start: e.target.value })
+                  }
+                />
+                <Input
+                  type="date"
+                  value={newPlan.end}
+                  onChange={(e) =>
+                    setNewPlan({ ...newPlan, end: e.target.value })
+                  }
+                />
+                <Select
+                  value={newPlan.color}
+                  onValueChange={(v) => setNewPlan({ ...newPlan, color: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="色を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bg-purple-400">紫</SelectItem>
+                    <SelectItem value="bg-blue-400">青</SelectItem>
+                    <SelectItem value="bg-green-400">緑</SelectItem>
+                    <SelectItem value="bg-red-400">赤</SelectItem>
+                    <SelectItem value="bg-yellow-400">黄</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setPlanOpen(false)}>
+                    キャンセル
+                  </Button>
+                  <Button onClick={handleAddPlan} className="bg-orange-500">
+                    追加
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* 編集モーダル */}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>

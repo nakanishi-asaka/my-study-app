@@ -51,7 +51,7 @@ export default function TodoItem({
           type="checkbox"
           checked={todo.is_done}
           readOnly
-          onChange={() => onToggle(todo)}
+          onClick={() => onToggle(todo)}
           className="w-5 h-5 cursor-pointer"
         />
         <span>{todo.title}</span>

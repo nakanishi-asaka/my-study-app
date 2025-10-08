@@ -22,7 +22,7 @@ import {
 
 import TodoList from "../components/TodoList";
 import TodoModal from "../components/TodoModal";
-import { fetchTodos, toggleTodo } from "@/lib/data";
+import { fetchTodos, rolloverProgress, toggleTodo } from "@/lib/data";
 import {
   getAdjustedDateObj,
   getDayTypeFromAdjustedDate,
@@ -178,8 +178,6 @@ export default function HomePage() {
     fetchStats();
   }, [user]);
 
-  //モーダルでtodo表示用
-
   // dayType の算出を useEffect に移動
   useEffect(() => {
     if (typeof dayRolloverHour !== "number") return;
@@ -237,6 +235,8 @@ export default function HomePage() {
   const handleToggle = async (todo: Todo) => {
     setLoading(true);
     await toggleTodo(user, todo, dayRolloverHour);
+    const updated = await fetchTodos(user.id, dayRolloverHour);
+    setTodos(updated);
     setLoading(false);
   };
 
