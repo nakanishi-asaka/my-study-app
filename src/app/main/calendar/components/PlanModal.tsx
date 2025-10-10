@@ -37,6 +37,25 @@ export function PlanModal({
     onOpenChange(false); // モーダル閉じる（親側state更新）
   };
 
+  const formatDateForInput = (date: Date | string | null | undefined) => {
+    if (!date) return "";
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return "";
+    //時刻補正
+    const offset = d.getTimezoneOffset(); // JSTなら -540
+    const local = new Date(d.getTime() - offset * 60 * 1000);
+    return local.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  };
+
+  /** ✅ onChange で Date オブジェクトに変換して setPlan する */
+  const handleDateChange = (key: "start" | "end", value: string) => {
+    if (!value) return;
+    // JST で日付を固定（UTC化しない）
+    const [year, month, day] = value.split("-").map(Number);
+    const newDate = new Date(year, month - 1, day, 0, 0, 0);
+    setPlan({ ...plan, [key]: newDate });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -46,30 +65,18 @@ export function PlanModal({
         <div className="space-y-3">
           <Input
             placeholder="タイトル"
-            value={plan.title}
+            value={plan.title || ""}
             onChange={(e) => setPlan({ ...plan, title: e.target.value })}
           />
           <Input
             type="date"
-            value={
-              typeof plan.start === "string"
-                ? plan.start
-                : plan.start.toISOString().split("T")[0]
-            }
-            onChange={(e) =>
-              setPlan({ ...plan, start: new Date(e.target.value) })
-            }
+            value={formatDateForInput(plan.start)}
+            onChange={(e) => handleDateChange("start", e.target.value)}
           />
           <Input
             type="date"
-            value={
-              typeof plan.end === "string"
-                ? plan.end
-                : plan.end.toISOString().split("T")[0]
-            }
-            onChange={(e) =>
-              setPlan({ ...plan, end: new Date(e.target.value) })
-            }
+            value={formatDateForInput(plan.end)}
+            onChange={(e) => handleDateChange("end", e.target.value)}
           />
           <Select
             value={plan.color}

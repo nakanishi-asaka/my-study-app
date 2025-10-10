@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { insertStudySession } from "../../../../lib/db/study_sessions";
 import { deletePlan, upsertPlan } from "../../../../lib/db/plans";
-import { formatDate } from "../../../../lib/utils/format";
 
 export function useCalendarControls(user: any, onReload?: () => void) {
   // モーダル管理
@@ -96,22 +95,10 @@ export function useCalendarControls(user: any, onReload?: () => void) {
       console.log("💾 保存直前のplan:", plan);
 
       setPlanLoading(true);
-
-      const formattedPlan: any = {
-        title: plan.title,
-        start_date: formatDate(new Date(plan.start)),
-        end_date: formatDate(new Date(plan.end)),
-        color: plan.color.replace("bg-", "").replace("-400", ""),
-        user_id: user.id,
-      };
-
       const mode = plan.mode;
-      // update のときだけ id をセット
-      if (mode === "update" && plan.id) {
-        formattedPlan.id = plan.id;
-      }
 
-      await upsertPlan(user.id, formattedPlan, mode);
+      //planをそのまま渡す
+      await upsertPlan(user.id, plan, mode);
 
       // モーダル閉じる
       if (plan.mode === "insert") {
