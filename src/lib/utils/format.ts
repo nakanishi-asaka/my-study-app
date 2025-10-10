@@ -1,8 +1,7 @@
-// YYYY-MM-DD に変換（DBのdate型に揃える）UTC基準に依存しない
-export function formatDate(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
+// utils/format.ts
+export function formatDate(date: string | Date) {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return `${d.getFullYear()}-${(d.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`;
 }

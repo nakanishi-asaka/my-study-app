@@ -8,54 +8,58 @@ export default function ProfilePage() {
   const [username, setUsername] = useState("");
   const [examDate, setExamDate] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null); //プレビュー用
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null); //保存済みurl
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null); // ← ファイル関連エラー
+
   const [dayRolloverHour, setDayRolloverHour] = useState<number>(3);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  //プロフィール取得
+  async function fetchProfile() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setMessage("ログインしてください");
+      return;
+    }
+
+    setUserId(user.id);
+
+    // デバッグ: ログインユーザーの情報
+    console.log("🔑 Auth user:", user);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("username, exam_date, avatar_url,day_rollover_hour")
+      .eq("id", user.id)
+      .single();
+
+    if (error) {
+      console.error("プロフィール取得エラー:", error);
+      setMessage("プロフィールの取得に失敗しました");
+      return;
+    }
+
+    if (data) {
+      setUsername(data.username || "");
+      setExamDate(data.exam_date || "");
+      setAvatarPreview(data.avatar_url || null);
+      setDayRolloverHour(data.day_rollover_hour ?? 3);
+    }
+  }
+
   // ✅ ログインユーザーの情報 + プロフィール取得
   useEffect(() => {
-    const fetchProfile = async () => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        setMessage("ログインしてください");
-        return;
-      }
-
-      setUserId(user.id);
-
-      // デバッグ: ログインユーザーの情報
-      console.log("🔑 Auth user:", user);
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("username, exam_date, avatar_url,day_rollover_hour")
-        .eq("id", user.id)
-        .single();
-
-      if (error) {
-        console.error("プロフィール取得エラー:", error);
-        setMessage("プロフィールの取得に失敗しました");
-        return;
-      }
-
-      if (data) {
-        setUsername(data.username || "");
-        setExamDate(data.exam_date || "");
-        setAvatarPreview(data.avatar_url || null);
-        setDayRolloverHour(data.day_rollover_hour ?? 3);
-      }
-    };
-
     fetchProfile();
   }, []);
 
-  // アバタープレビューの更新
+  // アバタープレビューの生成
   useEffect(() => {
     if (!avatarFile) return;
     const url = URL.createObjectURL(avatarFile);
@@ -67,19 +71,21 @@ export default function ProfilePage() {
   function onSelectAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
-    // Optional: basic validation
+
+    //選択されていないorサイズが大きい場合
     if (!f.type.startsWith("image/")) {
-      setMessage("画像ファイルを選択してください。");
+      setAvatarError("画像ファイルを選択してください。");
       return;
     }
     if (f.size > 3 * 1024 * 1024) {
-      setMessage("ファイルサイズは3MB以下にしてください。");
+      setAvatarError("ファイルサイズは3MB以下にしてください。");
       return;
     }
-    setMessage(null);
+    setAvatarError(null);
     setAvatarFile(f);
   }
 
+  //保存処理
   async function handleSave() {
     if (!userId) {
       setMessage("ログインしてください");
@@ -87,15 +93,13 @@ export default function ProfilePage() {
     }
 
     setSaving(true);
-    setMessage(null);
 
     try {
-      let avatarUrl: string | null = avatarPreview;
+      let url = avatarUrl;
 
       // ✅ ファイルが選ばれていたら Storage にアップロード
       if (avatarFile) {
         const fileExt = avatarFile.name.split(".").pop();
-
         const filePath = `${userId}/avatar.${fileExt}`;
 
         // 上書き保存 (既存があれば置き換え)
@@ -113,7 +117,8 @@ export default function ProfilePage() {
           .from("avatar_url")
           .getPublicUrl(filePath);
 
-        avatarUrl = urlData.publicUrl;
+        url = urlData.publicUrl;
+        setAvatarUrl(url);
       }
 
       //dbに保存
@@ -140,11 +145,22 @@ export default function ProfilePage() {
     }
   }
 
-  //アバター削除
-  function handleRemoveAvatar() {
+  //アバター削除(プレビュー消す＆選択ファイルをリセット)
+  async function handleRemoveAvatar() {
     setAvatarFile(null);
     setAvatarPreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    // 既存アバター削除（任意：必要な場合のみ）
+    if (userId && avatarUrl) {
+      try {
+        const path = avatarUrl.split("/").slice(-2).join("/"); // userId/avatar.png など
+        await supabase.storage.from("avatar_url").remove([path]);
+        setAvatarUrl(null);
+      } catch (err) {
+        console.warn("アバター削除エラー:", err);
+      }
+    }
   }
 
   const isValidUsername = username.trim().length >= 2;
@@ -155,7 +171,7 @@ export default function ProfilePage() {
         <h1 className="text-2xl font-semibold mb-4">プロフィール</h1>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Avatar column */}
+          {/* アバター画像設定 */}
           <div className="flex flex-col items-center md:items-start">
             <div className="w-36 h-36 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200">
               {avatarPreview ? (
@@ -165,7 +181,7 @@ export default function ProfilePage() {
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="text-sm text-slate-400 p-3 text-center">
+                <div className="text-sm text-red-800 p-3 text-center">
                   アバターがまだ設定されていません
                 </div>
               )}
@@ -197,9 +213,14 @@ export default function ProfilePage() {
             <p className="mt-3 text-xs text-gray-600">
               推奨: PNG/JPEG, 3MB 以下
             </p>
+            {avatarError && (
+              <p className="mt-1 text-red-600 text-sm font-medium">
+                ⚠️ {avatarError}
+              </p>
+            )}
           </div>
 
-          {/* Form column */}
+          {/* プロフィール入力フォーム */}
           <div className="md:col-span-2">
             <label className="block">
               <div className="text-sm font-medium">ユーザー名</div>
@@ -207,12 +228,20 @@ export default function ProfilePage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="例：てすと・ユーザー・太郎"
+                placeholder="例：TEST・ユーザー・太郎"
                 aria-label="ユーザー名"
                 className="mt-2 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
-              <p className="text-xs mt-1 text-slate-600">
-                2文字以上で入力してください。
+              <p
+                className={`text-xs mt-1 ${
+                  !isValidUsername && username.trim() !== ""
+                    ? "text-red-600 font-medium"
+                    : "text-slate-600"
+                }`}
+              >
+                {!isValidUsername && username.trim() !== ""
+                  ? "⚠️ ユーザー名は2文字以上で入力してください。"
+                  : ""}
               </p>
             </label>
 
@@ -259,7 +288,15 @@ export default function ProfilePage() {
             </div>
 
             {message && (
-              <div className="mt-4 text-sm text-slate-700">{message}</div>
+              <div
+                className={`mt-4 text-sm font-medium px-4 py-2 rounded-md ${
+                  message.includes("失敗") || message.includes("エラー")
+                    ? "bg-red-100 text-red-700 border border-red-300"
+                    : "bg-green-100 text-green-700 border border-green-300"
+                }`}
+              >
+                {message}
+              </div>
             )}
           </div>
         </section>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useMemo } from "react";
 import { supabase } from "../../supabaseClient";
 import {
   addDays,
@@ -18,51 +19,27 @@ import {
 } from "date-fns";
 import { BookOpen, Plus } from "lucide-react";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { StudyTimeModal } from "./components/StudyModal";
+import { PlanModal } from "./components/PlanModal";
+import { useCalendarControls } from "./hooks/useCalendarControls";
+import { EditPlanModal } from "./components/EditPlanModal";
+
+//追加
+const formatDate = (d: Date) => format(d, "yyyy-MM-dd");
 
 export default function CalendarWithPlansAndNotes() {
   const [user, setUser] = useState<any>(null);
   const [studyPlans, setStudyPlans] = useState<any[]>([]);
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
-  const [hours, setHours] = useState(0);
-  const [minutes, setMinutes] = useState(0);
   const [dailyRecords, setDailyRecords] = useState<Record<string, string[]>>(
     {}
   );
-  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
   const [month, setMonth] = useState(new Date());
-
-  // モーダル管理
-  const [studytimeOpen, setStudyTimeOpen] = useState(false);
-  const [planOpen, setPlanOpen] = useState(false);
-  const [newPlan, setNewPlan] = useState({
-    title: "",
-    start: "",
-    end: "",
-    color: "bg-purple-400",
-  });
+  const [dailyStudy, setDailyStudy] = useState<Record<string, number>>({}); // ✅ 学習時間マッピング用 state
 
   const monthStart = startOfMonth(month);
   const monthEnd = endOfMonth(month);
-
   const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
   const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
 
@@ -78,234 +55,124 @@ export default function CalendarWithPlansAndNotes() {
   const handlePrevMonth = () => setMonth(subMonths(month, 1));
   const handleNextMonth = () => setMonth(addMonths(month, 1));
 
-  // 📅 その月の週リストを再計算
+  // ✅ セッション確認 & ユーザー認証
+  useEffect(() => {
+    supabase.auth
+      .getUser()
+      .then(({ data }) => data?.user && setUser(data.user));
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user || null));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // データ取得共通関数
+  const fetchTable = async (table: string, eq?: Record<string, any>) => {
+    let query = supabase.from(table).select("*");
+    if (eq) Object.entries(eq).forEach(([k, v]) => (query = query.eq(k, v)));
+    const { data, error } = await query;
+    if (error) console.error(`${table} fetch error:`, error);
+    return data || [];
+  };
+
+  // ✅ Supabaseから予定を取得
+  const fetchPlans = async () => {
+    const data = await fetchTable("plans");
+    setStudyPlans(
+      data.map((p) => ({
+        id: p.id,
+        title: p.title,
+        start: parseISO(p.start_date),
+        end: parseISO(p.end_date),
+        color: `bg-${p.color}-400`,
+      }))
+    );
+  };
+
+  //予定と学習時間を取得
+  useEffect(() => {
+    fetchPlans();
+    fetchStudySessions();
+  }, []);
+
+  // ✅ Supabaseから日ごとに学習時間を集計して取得
+  useEffect(() => {
+    if (!user) return;
+    fetchTable("study_records", { user_id: user.id }).then((data) => {
+      const grouped: Record<string, string[]> = {};
+      data.forEach((rec: any) => {
+        const day = formatDate(new Date(rec.created_at));
+        (grouped[day] ||= []).push(rec.title);
+      });
+      setDailyRecords(grouped);
+    });
+  }, [user]);
+
+  // ✅学習時間： study_records を取得
+  const fetchStudySessions = async () => {
+    const data = await fetchTable("study_sessions");
+    const totals: Record<string, number> = {};
+    data.forEach(
+      (s: any) =>
+        (totals[s.study_date] = (totals[s.study_date] || 0) + s.study_minutes)
+    );
+    setDailyStudy(totals);
+  };
+
+  const onReload = async () => {
+    await fetchPlans();
+    await fetchStudySessions(); // ← これを追加！
+  };
+
+  const {
+    newPlanOpen,
+    editPlanOpen,
+    studyTimeOpen,
+    plan,
+    hours,
+    minutes,
+    setHours,
+    setMinutes,
+    loading,
+    planLoading,
+    setPlan,
+    openEditPlanModal,
+    openNewPlanModal,
+    openStudyTimeModal,
+    closeNewPlanModal,
+    closeEditPlanModal,
+    closeStudyTimeModal,
+    saveStudyTime,
+    savePlan,
+    handleDeletePlan,
+  } = useCalendarControls(user, onReload);
+
+  // --- 今日関連ユーティリティ ---
+  const getTodayInfo = () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 時間切り捨て
+    const todayStr = format(today, "yyyy-MM-dd");
+    return { now, today, todayStr };
+  };
+
+  const { now, today, todayStr } = getTodayInfo();
+
+  // ✅ 今日の予定を抽出(Dateに変換して比較)
+  const todaysPlans = useMemo(() => {
+    return studyPlans.filter(
+      (p) =>
+        format(p.start, "yyyy-MM-dd") <= todayStr &&
+        format(p.end, "yyyy-MM-dd") >= todayStr
+    );
+  }, [studyPlans, todayStr]);
+
+  // カレンダー週構造
   const weeks = eachWeekOfInterval({
     start: startOfWeek(startOfMonth(month), { weekStartsOn: 0 }),
     end: endOfWeek(endOfMonth(month), { weekStartsOn: 0 }),
   }).map((weekStart) =>
     Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   );
-
-  // ✅ 学習時間マッピング用 state
-  const [dailyStudy, setDailyStudy] = useState<Record<string, number>>({});
-
-  //今日の予定表示用
-  const today = new Date();
-  const todayKey = format(today, "yyyy-MM-dd");
-
-  // ✅ セッション確認 & ユーザー設定
-  useEffect(() => {
-    const init = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) console.error("getUser error:", error);
-
-      if (data?.user) {
-        console.log("ログイン済み:", data.user);
-        setUser(data.user);
-      } else {
-        console.warn("未ログイン状態");
-      }
-    };
-    init();
-
-    // セッション変更を監視
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event, session);
-      if (session?.user) {
-        setUser(session.user);
-      } else {
-        setUser(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // ✅ Supabaseから予定を取得
-  useEffect(() => {
-    const fetchPlans = async () => {
-      const { data, error } = await supabase.from("plans").select("*");
-      if (error) {
-        console.error("fetch error:", error);
-      } else if (data) {
-        setStudyPlans(
-          data.map((p) => ({
-            id: p.id,
-            title: p.title,
-            start: parseISO(p.start_date),
-            end: parseISO(p.end_date),
-            color: `bg-${p.color}-400`,
-          }))
-        );
-      }
-    };
-    fetchPlans();
-  }, []);
-
-  // ✅ Supabaseから日ごとに学習時間を集計して取得
-  useEffect(() => {
-    const fetchStudySessions = async () => {
-      const { data, error } = await supabase
-        .from("study_sessions")
-        .select("study_date, study_minutes");
-
-      if (error) {
-        console.error("fetch error:", error);
-        return;
-      }
-
-      // 日ごとに合計
-      const totals: Record<string, number> = {};
-      data.forEach((s: any) => {
-        totals[s.study_date] = (totals[s.study_date] || 0) + s.study_minutes;
-      });
-      setDailyStudy(totals);
-    };
-
-    fetchStudySessions();
-  }, []);
-
-  // ✅ study_records を取得
-  useEffect(() => {
-    const fetchRecords = async () => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        console.error("ユーザー取得エラー:", userError);
-        return;
-      }
-
-      if (!user) {
-        console.error("ログインユーザーなし");
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("study_records")
-        .select("*")
-        .eq("user_id", user.id);
-
-      if (error) {
-        console.error("データ取得失敗:", error);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        console.log("データなし");
-        setDailyRecords({});
-        return;
-      }
-
-      // 日ごとの表示するため、日付ごとにグルーピング
-      const grouped: Record<string, string[]> = {};
-      for (const rec of data) {
-        const day = format(new Date(rec.created_at), "yyyy-MM-dd");
-        if (!grouped[day]) grouped[day] = [];
-        grouped[day].push(rec.title);
-      }
-
-      setDailyRecords(grouped);
-    };
-
-    fetchRecords();
-  }, []);
-
-  // ✅ 今日の予定を抽出(Dateに変換して比較)
-  const toDateOnly = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-  const todayOnly = toDateOnly(new Date());
-
-  const todaysPlans = studyPlans.filter((plan) => {
-    const start = toDateOnly(new Date(plan.start)); // ← string → Date
-    const end = toDateOnly(new Date(plan.end));
-    return start <= todayOnly && end >= todayOnly;
-  });
-
-  // ✅ 予定追加
-  const handleAddPlan = async () => {
-    if (!user) {
-      alert("ログインしてください");
-      return;
-    }
-    if (!newPlan.title || !newPlan.start || !newPlan.end) return;
-
-    const { data, error } = await supabase
-      .from("plans")
-      .insert([
-        {
-          user_id: user.id, // ✅ ログインユーザーを利用
-          title: newPlan.title,
-          start_date: newPlan.start,
-          end_date: newPlan.end,
-          color: newPlan.color.replace("bg-", "").replace("-400", ""),
-        },
-      ])
-      .select();
-
-    if (error) {
-      console.error("Insert error:", error);
-      alert("保存に失敗しました");
-      return;
-    }
-
-    if (data) {
-      setStudyPlans([
-        ...studyPlans,
-        {
-          id: data[0].id,
-          title: data[0].title,
-          start: parseISO(data[0].start_date),
-          end: parseISO(data[0].end_date),
-          color: `bg-${data[0].color}-400`,
-        },
-      ]);
-    }
-
-    setNewPlan({ title: "", start: "", end: "", color: "bg-purple-400" });
-    setPlanOpen(false);
-  };
-
-  //study_sessionに学習時間を追加(日ごと合計を表示するので、1日に複数回ok)
-  const handleSaveStudyTime = async () => {
-    const totalMinutes = hours * 60 + minutes;
-    if (totalMinutes === 0) return;
-
-    const today = format(new Date(), "yyyy-MM-dd");
-
-    const { data, error } = await supabase
-      .from("study_sessions")
-      .insert([
-        {
-          user_id: user.id,
-          study_date: today,
-          study_minutes: totalMinutes,
-        },
-      ])
-      .select();
-
-    if (error) {
-      console.error("Insert error:", error);
-      alert("保存失敗しました");
-      return;
-    }
-
-    // state 更新
-    setDailyStudy((prev) => ({
-      ...prev,
-      [today]: (prev[today] || 0) + totalMinutes,
-    }));
-
-    //フォームリセット＆モーダル閉じる
-    setHours(0);
-    setMinutes(0);
-    setStudyTimeOpen(false);
-  };
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
@@ -319,15 +186,20 @@ export default function CalendarWithPlansAndNotes() {
               <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
                 <p className="font-semibold text-blue-700">今日の予定：</p>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  {todaysPlans.map((plan) => {
-                    const days =
-                      differenceInCalendarDays(today, plan.start) + 1;
+                  {todaysPlans.map((p) => {
+                    // ✅ start/end はDate型前提
+                    const startDate = startOfDay(
+                      typeof p.start === "string" ? parseISO(p.start) : p.start
+                    );
+
+                    const days = differenceInCalendarDays(today, startDate) + 1;
+
                     return (
                       <span
-                        key={plan.id}
+                        key={p.id}
                         className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-semibold"
                       >
-                        {plan.title}（{days}日目）
+                        {p.title}（{days}日目）
                       </span>
                     );
                   })}
@@ -340,7 +212,7 @@ export default function CalendarWithPlansAndNotes() {
           <div className="flex flex-col  items-end gap-4">
             {/* 学習時間ボタン */}
             <Button
-              onClick={() => setStudyTimeOpen(true)}
+              onClick={openStudyTimeModal}
               className="rounded-full bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
             >
               <Plus size={20} className="mr-1" />
@@ -349,7 +221,7 @@ export default function CalendarWithPlansAndNotes() {
 
             {/* 予定追加ボタン */}
             <Button
-              onClick={() => setPlanOpen(true)}
+              onClick={() => openNewPlanModal()}
               className="rounded-full bg-orange-500 hover:bg-orange-600 px-6 py-3 text-base"
             >
               <Plus size={20} className="mr-1" />
@@ -357,253 +229,36 @@ export default function CalendarWithPlansAndNotes() {
             </Button>
           </div>
 
-          {/* 勉強時間入力フォーム */}
-          <Dialog open={studytimeOpen} onOpenChange={setStudyTimeOpen}>
-            <DialogContent className="w-full max-w-md">
-              <DialogHeader>
-                <DialogTitle>🕐今日の学習時間を入力</DialogTitle>
-              </DialogHeader>
-
-              <div className="flex items-center gap-4 mt-2">
-                <Select
-                  value={hours.toString()}
-                  onValueChange={(v) => setHours(Number(v))}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue placeholder="時間" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 13 }, (_, i) => (
-                      <SelectItem key={i} value={i.toString()}>
-                        {i} 時間
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={minutes.toString()}
-                  onValueChange={(v) => setMinutes(Number(v))}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue placeholder="分" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
-                      <SelectItem key={m} value={m.toString()}>
-                        {m} 分
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Button
-                onClick={handleSaveStudyTime}
-                className="bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
-              >
-                保存
-              </Button>
-            </DialogContent>
-          </Dialog>
+          {/* 学習時間追加モーダル */}
+          <StudyTimeModal
+            open={studyTimeOpen}
+            onOpenChange={closeStudyTimeModal}
+            hours={hours}
+            minutes={minutes}
+            onHoursChange={setHours}
+            onMinutesChange={setMinutes}
+            onSave={saveStudyTime}
+            loading={loading}
+          />
 
           {/* 予定追加モーダル */}
-          <Dialog open={planOpen} onOpenChange={setPlanOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>新しい予定を追加</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3">
-                <Input
-                  placeholder="タイトル"
-                  value={newPlan.title}
-                  onChange={(e) =>
-                    setNewPlan({ ...newPlan, title: e.target.value })
-                  }
-                />
-                <Input
-                  type="date"
-                  value={newPlan.start}
-                  onChange={(e) =>
-                    setNewPlan({ ...newPlan, start: e.target.value })
-                  }
-                />
-                <Input
-                  type="date"
-                  value={newPlan.end}
-                  onChange={(e) =>
-                    setNewPlan({ ...newPlan, end: e.target.value })
-                  }
-                />
-                <Select
-                  value={newPlan.color}
-                  onValueChange={(v) => setNewPlan({ ...newPlan, color: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="色を選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bg-purple-400">紫</SelectItem>
-                    <SelectItem value="bg-blue-400">青</SelectItem>
-                    <SelectItem value="bg-green-400">緑</SelectItem>
-                    <SelectItem value="bg-red-400">赤</SelectItem>
-                    <SelectItem value="bg-yellow-400">黄</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setPlanOpen(false)}>
-                    キャンセル
-                  </Button>
-                  <Button onClick={handleAddPlan} className="bg-orange-500">
-                    追加
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <PlanModal
+            open={newPlanOpen}
+            onOpenChange={closeNewPlanModal}
+            user={user}
+            onReload={fetchPlans}
+          />
 
           {/* 編集モーダル */}
-          <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>予定を編集</DialogTitle>
-              </DialogHeader>
-              {selectedPlan && (
-                <div className="space-y-3">
-                  <Input
-                    value={selectedPlan.title}
-                    onChange={(e) =>
-                      setSelectedPlan({
-                        ...selectedPlan,
-                        title: e.target.value,
-                      })
-                    }
-                  />
-                  <Input
-                    type="date"
-                    value={format(selectedPlan.start, "yyyy-MM-dd")}
-                    onChange={(e) =>
-                      setSelectedPlan({
-                        ...selectedPlan,
-                        start: new Date(e.target.value),
-                      })
-                    }
-                  />
-                  <Input
-                    type="date"
-                    value={format(selectedPlan.end, "yyyy-MM-dd")}
-                    onChange={(e) =>
-                      setSelectedPlan({
-                        ...selectedPlan,
-                        end: new Date(e.target.value),
-                      })
-                    }
-                  />
-
-                  {/* 色選択 */}
-                  <Select
-                    value={selectedPlan.color}
-                    onValueChange={(v) =>
-                      setSelectedPlan({ ...selectedPlan, color: v })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="色を選択" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bg-purple-400">紫</SelectItem>
-                      <SelectItem value="bg-blue-400">青</SelectItem>
-                      <SelectItem value="bg-green-400">緑</SelectItem>
-                      <SelectItem value="bg-red-400">赤</SelectItem>
-                      <SelectItem value="bg-yellow-400">黄</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  {/* 削除確認用 state */}
-                  {confirmDelete ? (
-                    <div className="space-y-3">
-                      <p className="text-red-600 font-semibold">
-                        本当に削除しますか？
-                      </p>
-                      <div className="flex justify-between">
-                        <Button
-                          variant="outline"
-                          onClick={() => setConfirmDelete(false)}
-                        >
-                          キャンセル
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          onClick={async () => {
-                            const { error } = await supabase
-                              .from("plans")
-                              .delete()
-                              .eq("id", selectedPlan.id)
-                              .eq("user_id", user.id);
-
-                            if (error) {
-                              console.error("削除失敗:", error.message);
-                              return;
-                            }
-
-                            setStudyPlans((prev) =>
-                              prev.filter((p) => p.id !== selectedPlan.id)
-                            );
-                            setEditOpen(false);
-                            setConfirmDelete(false);
-                          }}
-                        >
-                          削除する
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between mt-4">
-                      <Button
-                        variant="destructive"
-                        onClick={() => setConfirmDelete(true)}
-                      >
-                        削除
-                      </Button>
-                      <Button
-                        onClick={async () => {
-                          const { error } = await supabase
-                            .from("plans")
-                            .update({
-                              title: selectedPlan.title,
-                              start_date: format(
-                                selectedPlan.start,
-                                "yyyy-MM-dd"
-                              ),
-                              end_date: format(selectedPlan.end, "yyyy-MM-dd"),
-                              color: selectedPlan.color
-                                .replace("bg-", "")
-                                .replace("-400", ""),
-                            })
-                            .eq("id", selectedPlan.id)
-                            .eq("user_id", user.id);
-
-                          if (error) {
-                            console.error("更新失敗:", error.message);
-                            return;
-                          }
-
-                          setStudyPlans((prev) =>
-                            prev.map((p) =>
-                              p.id === selectedPlan.id ? selectedPlan : p
-                            )
-                          );
-                          setEditOpen(false);
-                        }}
-                      >
-                        保存
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </DialogContent>
-          </Dialog>
+          <EditPlanModal
+            open={editPlanOpen}
+            onOpenChange={closeEditPlanModal}
+            plan={plan}
+            setPlan={setPlan}
+            onSave={savePlan}
+            onDelete={handleDeletePlan}
+            planLoading={planLoading}
+          />
         </div>
 
         {/* 📅 月切り替えヘッダー */}
@@ -634,9 +289,9 @@ export default function CalendarWithPlansAndNotes() {
           );
 
           return (
-            <div key={wi} className="relative mb-2">
+            <div key={wi} className="relative mb-2 h-32">
               {/* 日付セル */}
-              <div className="grid grid-cols-7 gap-1 relative z-10">
+              <div className="grid grid-cols-7 gap-1 h-full relative z-10">
                 {week.map((day) => {
                   const key = format(day, "yyyy-MM-dd");
                   const titles = dailyRecords[key] || [];
@@ -647,15 +302,14 @@ export default function CalendarWithPlansAndNotes() {
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`h-32 border rounded-lg p-1 text-xs flex flex-col justify-start relative
+                      className={`border rounded-lg p-1 text-xs flex flex-col justify-start relative
                 ${
                   isToday
                     ? "bg-blue-100 border-blue-300"
                     : day.getMonth() === month.getMonth()
                     ? "bg-gray-50"
                     : "bg-gray-100 text-gray-400"
-                }
-              `}
+                }`}
                     >
                       {/* 上部: 日付と時間 */}
                       <div className="flex justify-between items-start">
@@ -677,7 +331,7 @@ export default function CalendarWithPlansAndNotes() {
                       </div>
 
                       {/* ノートアイコン */}
-                      {titles?.length > 0 && (
+                      {titles.length > 0 && (
                         <button
                           onClick={() =>
                             setSelectedNote(selectedNote === key ? null : key)
@@ -687,23 +341,19 @@ export default function CalendarWithPlansAndNotes() {
                           <BookOpen size={20} />
                         </button>
                       )}
-
-                      {/* バー用レイヤー（セル下端に固定） */}
-                      <div className="absolute bottom-1 left-0 right-0 h-6 z-20 pointer-events-none">
-                        {/* 各セル内に来るバーを後で配置する */}
-                      </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* 週全体のバーをまとめて描画 */}
-              <div className="absolute bottom-1 inset-x-0 grid grid-cols-7 gap-1 z-20 pointer-events-none">
+              {/* バー用レイヤー（週全体にまたがる） */}
+              <div
+                className="absolute bottom-0 left-0 right-0 grid grid-cols-7 gap-1 z-20 pointer-events-none"
+                style={{ height: "100%" }}
+              >
                 {(() => {
                   const barHeight = 16;
-                  const barGap = 2;
-
-                  //週内のバー情報を展開
+                  const barGap = 5;
                   const positionedBars: {
                     plan: any;
                     startIndex: number;
@@ -711,7 +361,9 @@ export default function CalendarWithPlansAndNotes() {
                     bottomOffset: number;
                   }[] = [];
 
-                  weekPlans.map((plan) => {
+                  const cellBottomPadding = 6; //セル下端からの余白
+
+                  weekPlans.forEach((plan) => {
                     const barStart = startOfDay(
                       plan.start > weekStart ? plan.start : weekStart
                     );
@@ -730,17 +382,20 @@ export default function CalendarWithPlansAndNotes() {
                         format(barEnd, "yyyy-MM-dd")
                     );
 
-                    //既に積まれてるバーと比較して、重なりがない最下段を探す
-                    let offsetLevel = 0;
+                    // positionedBars 生成部分
+
+                    let offsetLevel = 0; //縦方向の位置決め
+
                     while (
-                      positionedBars.some((b) => {
-                        const overlap =
+                      positionedBars.some(
+                        (b) =>
                           !(
                             b.endIndex < startIndex || b.startIndex > endIndex
                           ) &&
-                          b.bottomOffset === offsetLevel * (barHeight + barGap);
-                        return overlap;
-                      })
+                          b.bottomOffset ===
+                            cellBottomPadding +
+                              offsetLevel * (barHeight + barGap)
+                      )
                     ) {
                       offsetLevel++;
                     }
@@ -749,31 +404,27 @@ export default function CalendarWithPlansAndNotes() {
                       plan,
                       startIndex,
                       endIndex,
-                      bottomOffset: offsetLevel * (barHeight + barGap),
+                      bottomOffset:
+                        cellBottomPadding + offsetLevel * (barHeight + barGap),
                     });
                   });
 
-                  // === 3️⃣ 計算済みバーを描画 ===
                   return positionedBars.map(
                     ({ plan, startIndex, endIndex, bottomOffset }, i) => (
                       <div
                         key={i}
-                        onClick={() => {
-                          setSelectedPlan(plan);
-                          setEditOpen(true);
-                        }}
+                        onClick={() => openEditPlanModal(plan)}
                         className={`${plan.color} bg-opacity-70 h-5 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
                         style={{
                           gridColumnStart: startIndex + 1,
                           gridColumnEnd: endIndex + 2,
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
                           bottom: `${bottomOffset}px`,
                         }}
                       >
-                        {startIndex === 0 ||
-                        format(plan.start, "yyyy-MM-dd") ===
-                          format(startOfDay(week[startIndex]), "yyyy-MM-dd")
-                          ? plan.title
-                          : ""}
+                        {plan.title}
                       </div>
                     )
                   );
