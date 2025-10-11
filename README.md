@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+## 🚀アプリURLとデモアカウント
+公開URL：
 
-## Getting Started
+#" デモアカウント  
+(固定のアカウントを用意しています↓)
+- メールアドレス：test@example.com  
+- パスワード：123456pass
 
-First, run the development server:
+## 🛠 技術スタック
+**フロントエンド**
+- Next.js  
+- React  
+- TypeScript  
+- Tailwind CSS  
+- shadcn  
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+**バックエンド**  
+- Supabase：(DB / Auth / Storage)  
+- Prisma  
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 💡 コンセプト
+- 社会人向けの**Todo＆スケジュール管理アプリ**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🎯 ターゲット
+- 社会人(新卒、20〜30代)  
+- 仕事で役立つ資格を取りたいけど、勉強が続かない＆時間が無くて難しい人  
+- 仕事で学んだことを整理したり、さらに勉強したい人  
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+## 🔧 解決したい課題とその解決策  
+- 時間が無い中で、今日やることを毎日考えるのが面倒。  
+- 休日(または時間があるとき)に、Todoを作成しておく。平日はそれをやることに集中！  
+- 勉強が続かない  
+- 1日1つでもTodoを達成したらokとして、連続記録に加算。勉強時間も5分から記録可能。  
+完了したTodo数や勉強時間を見える化し、トップに表示することでモチベーション維持。
 
-## Learn More
+## 📱 利用シーン
+- 平日の隙間時間＆休日  
+- 計画を立ててカレンダーでスケジュール管理＆日々の勉強はTodoで管理。
 
-To learn more about Next.js, take a look at the following resources:
+## 🔁 利用の流れ
+1.プロフィールページにて、試験日、切り替え時間(何時まで今日扱いにするか)を好きなように設定  
+2.平日/休日Todoをそれぞれ作成  
+3.アプリを確認してTodo実行、完了したら☑を入れる  
+4.勉強時間、学習ノートも記録。状況に応じてTodo追加、削除  
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🧑‍💻 なぜこれを行うのか
+学生時代に比べ、社会人になってから勉強を継続することの難しさを実感した。  
+そこで、「5分でもok」「todoを1個でもクリアすればok」といった形でハードルを下げて勉強を継続→目標(例：資格合格)を達成する手伝いができるアプリを作りたいと思ったから。  
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+## ✅ 現在の機能
+- ユーザー情報登録、ログイン（Supabase Auth）  
+- プロフィール設定  
+	- ユーザー名、プロフィール画像、切り替え時刻(何時まで当日扱い？)、試験日  
+- Todoリストの作成  
+- カレンダーに予定を登録し、中～長期的にスケジュール管理  
+- 学習ノート  
+	- メモ、画像、サイトURL、書籍という4つのジャンルで勉強内容を記録、整理できる  
+- 学習の積み重ねを統計で確認  
+	- 例：今週/累計勉強時間、○○日連続でTodo達成  
 
-## Deploy on Vercel
+## ✨ 今後実装予定の機能  
+- 平日/休日の切り替えを祝日に対応させる  
+- 継続記録の詳細  
+	- Todo達成率や勉強時間の積み重ね、傾向データなどをグラフで表示  
+- ダークモード  
+- アプリからの通知  
+	- あと何時間以内にTodo達成で連続○○日達成！など  
+- SNSシェア機能  
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
