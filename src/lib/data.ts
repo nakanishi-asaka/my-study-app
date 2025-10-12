@@ -29,7 +29,7 @@ export async function rolloverProgress(
   rolloverHour: number,
   adjustedDateArg?: Date
 ) {
-  //
+  //今日(日付切り替え後)の情報取得
   const { adjustedDate: todayAdjusted, formattedDate: todayFormatted } =
     adjustedDateArg
       ? {
@@ -38,11 +38,12 @@ export async function rolloverProgress(
         }
       : getTodayInfo(rolloverHour);
 
-  // ① 昨日のprogressを取得
+  // 昨日を計算(rollover基準)
   const yesterday = new Date(todayAdjusted);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayFormatted = formatDate(yesterday); //昨日の日付を計算
+  const yesterdayFormatted = formatDate(yesterday);
 
+  //昨日のprogressを取得
   const { data: oldProgress, error: progressError } = await supabase
     .from("todo_progress")
     .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
@@ -55,9 +56,12 @@ export async function rolloverProgress(
     return;
   }
 
-  if (!oldProgress || oldProgress.length === 0) return;
+  if (!oldProgress || oldProgress.length === 0) {
+    console.log("昨日のtodo_progressはありません");
+    return;
+  }
 
-  // ② 未完了だけ抽出→当日のrecordsに追加
+  //  未完了だけ抽出→当日のrecordsに追加
   if (oldProgress && oldProgress.length > 0) {
     const unfinished = oldProgress.filter((p) => !p.is_done);
     if (unfinished.length > 0) {
@@ -66,23 +70,23 @@ export async function rolloverProgress(
         template_id: p.template_id,
         is_done: false,
         title: p.todo_templates?.title ?? "",
-        date: p.adjusted_date, //当日扱いの日付、UTCズレ防止
+        date: yesterdayFormatted, //JST＋rollover考慮済みの「昨日」として記録、UTCズレ防止
       }));
 
       // ✅ insert → エラーなら削除しない（データ喪失防止）
       const { error: insertError } = await supabase
         .from("todo_records")
-        .upsert(insertRows, { onConflict: "user_id,template_id,date" });
+        .upsert(insertRows, { onConflict: "user_id,template_id,date" }); //recordsの重複追加防止
 
       if (insertError) {
         console.error(
           "Failed to insert unfinished todos into records:",
           insertError
         );
-        return; // ❌ insert失敗なら削除しない
+        return;
       }
 
-      // ✅ insert 成功したら古い progress を削除
+      //  insert 成功したら古い progress を削除
       const { error: deleteError } = await supabase
         .from("todo_progress")
         .delete()

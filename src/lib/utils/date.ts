@@ -24,21 +24,27 @@ export function getTodayInfo(rolloverHour: number): TodayInfo {
 // ユーザーごとの adjusted_date を計算する関数
 // getAdjustedDate を Date オブジェクトで返す
 export function getAdjustedDateObj(dayRolloverHour: number): Date {
-  const now = new Date();
+  const now = new Date(); // UTCのまま
   const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3;
 
-  const adjusted = new Date(now);
+  //jstの現在時刻に合わせる
+  const jstNow = new Date(
+    now.getTime() + (now.getTimezoneOffset() + -540) * 60 * 1000
+  );
 
-  if (now.getHours() < rollover) {
+  //jst基準で判定
+  const adjusted = new Date(jstNow);
+  if (jstNow.getHours() < rollover) {
     // rollover 時刻前なら「前日」を返す
     adjusted.setDate(adjusted.getDate() - 1);
   }
 
+  // JST基準で切り捨て
   return new Date(
     adjusted.getFullYear(),
     adjusted.getMonth(),
     adjusted.getDate()
-  ); // 時刻部分を切り捨て
+  );
 }
 
 //平日/休日判定

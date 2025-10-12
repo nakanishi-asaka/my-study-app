@@ -47,7 +47,7 @@ export function PlanModal({
     return local.toISOString().split("T")[0]; // "YYYY-MM-DD"
   };
 
-  /** ✅ onChange で Date オブジェクトに変換して setPlan する */
+  /** onChange で Date オブジェクトに変換して setPlan する */
   const handleDateChange = (key: "start" | "end", value: string) => {
     if (!value) return;
     // JST で日付を固定（UTC化しない）
