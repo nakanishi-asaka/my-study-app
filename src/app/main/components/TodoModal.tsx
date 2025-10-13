@@ -24,12 +24,6 @@ type Props = {
 export default function TodoModal({ todos, mode, buttonLabel }: Props) {
   const [open, setOpen] = useState(false);
 
-  console.log("🟩 Modal render", {
-    mode,
-    buttonLabel,
-    key: `${mode}-${buttonLabel}`,
-  });
-
   return (
     <div key={`${mode}-${buttonLabel}`}>
       <Button
