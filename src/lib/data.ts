@@ -1,7 +1,7 @@
 // rolloverProgress, fetchTodos, toggleTodo をここに移動
 
 import { supabase } from "../app/supabaseClient";
-import { getTodayInfo } from "./utils/date";
+import { getAdjustedDateObj, getTodayInfo } from "./utils/date";
 import { formatDate } from "./utils/format";
 
 // progress の型
@@ -29,7 +29,12 @@ export async function rolloverProgress(
   rolloverHour: number,
   adjustedDateArg?: Date
 ) {
-  //今日(日付切り替え後)の情報取得
+  console.log("🌀 rolloverProgress START", {
+    userId,
+    rolloverHour,
+    adjustedDateArg: adjustedDateArg?.toISOString(),
+  });
+  //現在のutc時間取得→jstに直す→今日(日付切り替え後)の情報取得
   const { adjustedDate: todayAdjusted, formattedDate: todayFormatted } =
     adjustedDateArg
       ? {
@@ -39,16 +44,38 @@ export async function rolloverProgress(
       : getTodayInfo(rolloverHour);
 
   // 昨日を計算(rollover基準)
-  const yesterday = new Date(todayAdjusted);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayFormatted = formatDate(yesterday);
+  const yesterdayAdjusted = new Date(todayAdjusted);
+  yesterdayAdjusted.setDate(yesterdayAdjusted.getDate() - 1);
+
+  // JSTのままformatDateに渡す
+  const yesterdayFormatted = formatDate(yesterdayAdjusted);
+
+  console.log("📅 rolloverProgress 日付情報", {
+    nowUTC: new Date().toISOString(),
+    todayAdjusted: todayAdjusted.toISOString(),
+    todayFormatted,
+    yesterdayAdjusted: yesterdayAdjusted.toISOString(),
+    yesterdayFormatted,
+  });
+
+  console.log("🧭 rolloverProgress クエリ確認", {
+    targetAdjustedDate: yesterdayFormatted,
+    sampleProgressDates: (
+      await supabase
+        .from("todo_progress")
+        .select("adjusted_date")
+        .eq("user_id", userId)
+        .order("adjusted_date", { ascending: false })
+        .limit(5)
+    ).data,
+  });
 
   //昨日のprogressを取得
   const { data: oldProgress, error: progressError } = await supabase
     .from("todo_progress")
     .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
     .eq("user_id", userId)
-    .eq("adjusted_date", yesterdayFormatted)
+    .eq("adjusted_date", yesterdayFormatted) //jst,rollover考慮した日付と一致するもの
     .overrideTypes<ProgressRow[]>();
 
   if (progressError) {
@@ -61,6 +88,11 @@ export async function rolloverProgress(
     return;
   }
 
+  console.log("✅ 昨日のprogress取得", {
+    count: oldProgress.length,
+    unfinished: oldProgress.filter((p) => !p.is_done).length,
+  });
+
   //  未完了だけ抽出→当日のrecordsに追加
   if (oldProgress && oldProgress.length > 0) {
     const unfinished = oldProgress.filter((p) => !p.is_done);
@@ -72,6 +104,8 @@ export async function rolloverProgress(
         title: p.todo_templates?.title ?? "",
         date: yesterdayFormatted, //JST＋rollover考慮済みの「昨日」として記録、UTCズレ防止
       }));
+
+      console.log("🟡 未完了タスク挿入予定:", insertRows.length);
 
       // ✅ insert → エラーなら削除しない（データ喪失防止）
       const { error: insertError } = await supabase
@@ -86,15 +120,19 @@ export async function rolloverProgress(
         return;
       }
 
+      console.log("✅ 未完了タスクをrecordsに追加しました");
+
       //  insert 成功したら古い progress を削除
       const { error: deleteError } = await supabase
         .from("todo_progress")
         .delete()
         .eq("user_id", userId)
-        .lt("adjusted_date", todayFormatted);
+        .lt("adjusted_date", todayFormatted); //jst
 
       if (deleteError) {
         console.error("Failed to delete old progress:", deleteError);
+      } else {
+        console.log("🗑️ 古いprogressを削除完了");
       }
     }
   }
@@ -102,11 +140,21 @@ export async function rolloverProgress(
 
 //最終的なtodoリストをreturnする関数
 export async function fetchTodos(userId: string, rolloverHour: number) {
+  console.log("🚀 fetchTodos START", {
+    userId,
+    nowUTC: new Date().toISOString(),
+    jstNow: new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString(),
+    rolloverHour,
+  });
+
   const { adjustedDate, formattedDate, dayType } = getTodayInfo(rolloverHour);
+  console.log("📅 今日の日付情報", { adjustedDate, formattedDate, dayType });
 
   try {
-    // ① 前日未完了タスクを引き継ぐ
+    console.log("🔁 rolloverProgress 実行開始");
+    // 昨日のtodoを処理する
     await rolloverProgress(userId, rolloverHour, adjustedDate);
+    console.log("✅ rolloverProgress 完了");
 
     // ② 今日のprogressがすでにあるか確認
     const { data: existing } = await supabase
@@ -115,6 +163,8 @@ export async function fetchTodos(userId: string, rolloverHour: number) {
       .eq("user_id", userId)
       .eq("adjusted_date", formattedDate);
 
+    console.log("📘 今日のprogress取得:", existing?.length || 0);
+
     // ③ 今日のテンプレートを取得
     const { data: templates } = await supabase
       .from("todo_templates")
@@ -122,6 +172,8 @@ export async function fetchTodos(userId: string, rolloverHour: number) {
       .eq("user_id", userId)
       .eq("repeat_type", dayType)
       .eq("is_active", true);
+
+    console.log("📗 有効テンプレート数:", templates?.length || 0);
 
     // dayType に合致する is_active=true の template を抽出
     if (templates) {
@@ -186,6 +238,7 @@ export async function fetchTodos(userId: string, rolloverHour: number) {
       .overrideTypes<ProgressRow[], { merge: false }>();
 
     if (error) throw error;
+    console.log("📦 fetchTodos 完了 (件数:", data?.length || 0, ")");
 
     // title をフラット化
     return (data || []).map((d) => ({
@@ -209,6 +262,20 @@ export async function toggleTodo(
   try {
     //今日の日付を取得(rollover基準)
     const { adjustedDate, formattedDate } = getTodayInfo(rolloverHour);
+
+    // --- Step 2: デバッグ出力 ---
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    console.log("🕒 toggleTodo DEBUG =======");
+    console.log("UTC now:        ", now.toISOString());
+    console.log("JST now:        ", jstNow.toISOString());
+    console.log("rolloverHour:   ", rolloverHour);
+    console.log("adjustedDate:   ", adjustedDate.toISOString());
+    console.log("formattedDate:  ", formattedDate);
+    console.log("todo.id:        ", todo.id);
+    console.log("todo.template_id:", todo.template_id);
+    console.log("===========================");
+
     const newDone = !todo.is_done;
 
     // progressのis_doneを 更新
