@@ -306,12 +306,12 @@ export default function NotesPage() {
           </select>
         </div>
 
-        <div className="mb-6 flex  items-center relative">
+        <div className="mb-6 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-4 relative">
           {/* 追加ボタン */}
           <div className="mx-auto">
             <button
               onClick={() => setShowForm(!showForm)}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition"
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition w-full sm:w-auto"
             >
               ＋ 新しい記録を追加
             </button>
@@ -321,7 +321,7 @@ export default function NotesPage() {
           <div className="absolute right-0">
             <button
               onClick={() => setEditMode(!editMode)}
-              className={`px-4 py-2 rounded-lg shadow transition ${
+              className={`px-4 py-2 rounded-lg shadow transition w-full sm:w-auto ${
                 editMode
                   ? "bg-red-500 text-white hover:bg-red-600"
                   : "bg-gray-300 hover:bg-gray-400"
@@ -478,7 +478,8 @@ export default function NotesPage() {
                               url: e.target.value,
                             })
                           }
-                          className="border px-2 py-1 rounded w-full"
+                          className="border px-2 py-1 rounded w-full overflow-hidden text-ellipsis"
+                          style={{ whiteSpace: "nowrap" }}
                         />
                       )}
 
