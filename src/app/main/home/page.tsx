@@ -75,7 +75,7 @@ export default function HomePage() {
 
   const [dayType, setDayType] = useState<"weekdays" | "weekend">("weekdays");
 
-  // ✅ クライアント側で session を取得してユーザー設定 + デバッグ
+  // クライアント側で session を取得してユーザー設定  ＋ fetchtodos実行+ デバッグ
   useEffect(() => {
     const init = async () => {
       const { data, error } = await supabase.auth.getSession();
