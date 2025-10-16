@@ -28,7 +28,7 @@ export default function TodoModal({ todos, mode, buttonLabel }: Props) {
     <div key={`${mode}-${buttonLabel}`}>
       <Button
         onClick={() => setOpen(true)}
-        className={`inline-block ${
+        className={`block mx-auto  ${
           mode === "weekend"
             ? "bg-green-500 hover:bg-green-600"
             : "bg-blue-500 hover:bg-blue-600"
