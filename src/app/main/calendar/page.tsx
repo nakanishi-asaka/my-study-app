@@ -209,24 +209,30 @@ export default function CalendarWithPlansAndNotes() {
           </div>
 
           {/* 右側: 入力フォームと予定追加ボタン */}
-          <div className="flex flex-col  items-end gap-4">
-            {/* 学習時間ボタン */}
-            <Button
-              onClick={openStudyTimeModal}
-              className="rounded-full bg-green-500 hover:bg-green-600 px-6 py-3 text-base"
-            >
-              <Plus size={20} className="mr-1" />
-              学習時間を入力
-            </Button>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col items-center">
+              {/* 学習時間ボタン */}
+              <Button
+                onClick={openStudyTimeModal}
+                className="rounded-full bg-green-500 hover:bg-green-600 p-3 sm:px-6 sm:py-3"
+              >
+                <Plus size={22} />
+                <span className="hidden sm:inline ml-1">学習時間を入力</span>
+              </Button>
+              <span className="text-xs mt-1 sm:hidden text-gray-600">学習</span>
+            </div>
 
             {/* 予定追加ボタン */}
-            <Button
-              onClick={() => openNewPlanModal()}
-              className="rounded-full bg-orange-500 hover:bg-orange-600 px-6 py-3 text-base"
-            >
-              <Plus size={20} className="mr-1" />
-              予定追加
-            </Button>
+            <div className="flex flex-col items-center">
+              <Button
+                onClick={() => openNewPlanModal()}
+                className="rounded-full bg-orange-500 hover:bg-orange-600 p-3 sm:px-6 sm:py-3"
+              >
+                <BookOpen size={22} />
+                <span className="hidden sm:inline ml-1">予定追加</span>
+              </Button>
+              <span className="text-xs mt-1 sm:hidden text-gray-600">予定</span>
+            </div>
           </div>
 
           {/* 学習時間追加モーダル */}

@@ -306,21 +306,19 @@ export default function NotesPage() {
           </select>
         </div>
 
-        <div className="mb-6 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-4 relative">
+        <div className="mb-6 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-4">
           {/* 追加ボタン */}
-          <div className="mx-auto">
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition w-full sm:w-auto"
-            >
-              ＋ 新しい記録を追加
-            </button>
-          </div>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition w-full sm:w-1/2"
+          >
+            ＋ 新しい記録を追加
+          </button>
 
           {/* 編集モード ボタン*/}
           <button
             onClick={() => setEditMode(!editMode)}
-            className={`px-4 py-2 rounded-lg shadow transition w-full sm:w-auto ${
+            className={`px-4 py-2 rounded-lg shadow transition w-full sm:w-1/2 ${
               editMode
                 ? "bg-red-500 text-white hover:bg-red-600"
                 : "bg-gray-300 hover:bg-gray-400"
@@ -531,7 +529,8 @@ export default function NotesPage() {
                         <a
                           href={r.url ?? ""}
                           target="_blank"
-                          className="text-blue-600 underline mt-1 inline-block truncate max-w-full"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 underline mt-1 inline-block truncate max-w-[250px] sm:max-w-[400px]"
                         >
                           {r.url}
                         </a>
