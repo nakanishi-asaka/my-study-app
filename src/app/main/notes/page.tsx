@@ -275,8 +275,8 @@ export default function NotesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 flex justify-center">
-      <div className="w-full max-w-3xl bg-white shadow-lg rounded-xl p-8">
+    <div className="min-h-screen bg-gray-50 p-3 flex justify-center">
+      <div className="w-full max-w-3xl bg-white shadow-lg rounded-xl px-4 py-3">
         <h1 className="text-2xl font-bold mb-6 text-center">学習記録</h1>
 
         {/* 🔍 検索 & ソート UI */}
@@ -318,18 +318,16 @@ export default function NotesPage() {
           </div>
 
           {/* 編集モード ボタン*/}
-          <div className="absolute right-0">
-            <button
-              onClick={() => setEditMode(!editMode)}
-              className={`px-4 py-2 rounded-lg shadow transition w-full sm:w-auto ${
-                editMode
-                  ? "bg-red-500 text-white hover:bg-red-600"
-                  : "bg-gray-300 hover:bg-gray-400"
-              }`}
-            >
-              {editMode ? "編集モード終了" : "編集モードへ"}
-            </button>
-          </div>
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className={`px-4 py-2 rounded-lg shadow transition w-full sm:w-auto ${
+              editMode
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-gray-300 hover:bg-gray-400"
+            }`}
+          >
+            {editMode ? "編集モード終了" : "編集モードへ"}
+          </button>
         </div>
 
         {/* 入力フォーム */}
@@ -533,7 +531,7 @@ export default function NotesPage() {
                         <a
                           href={r.url ?? ""}
                           target="_blank"
-                          className="text-blue-600 underline mt-1 inline-block"
+                          className="text-blue-600 underline mt-1 inline-block truncate max-w-full"
                         >
                           {r.url}
                         </a>

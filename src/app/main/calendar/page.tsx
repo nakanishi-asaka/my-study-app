@@ -175,8 +175,8 @@ export default function CalendarWithPlansAndNotes() {
   );
 
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow p-6 relative">
+    <div className="p-3 bg-gray-100 min-h-screen">
+      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow px-2 py-3 relative">
         {/* ヘッダー */}
         <div className="flex justify-between items-end mb-3">
           {/* 左側: タイトル + 今日の予定 */}
