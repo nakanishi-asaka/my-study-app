@@ -13,7 +13,7 @@ export type TodayInfo = {
 //ロールオーバー時刻を考慮して「今日」の情報をまとめて返す共通関数
 export function getTodayInfo(rolloverHour: number): TodayInfo {
   const adjustedDate = getAdjustedDateObj(rolloverHour); //rollover考慮した今日は何日？
-  const formattedDate = formatDate(adjustedDate);
+  const formattedDate = formatDateJST(adjustedDate);
   const dayType = getDayTypeFromAdjustedDate(adjustedDate); //rollover考慮した日付が平日or休日どちらか？
   return { adjustedDate, formattedDate, dayType };
 }
@@ -31,12 +31,17 @@ export function getAdjustedDateObj(dayRolloverHour: number): Date {
     jstNow.setDate(jstNow.getDate() - 1);
   }
 
-  // JSTの0時を作る（UTC換算ではなく、JSTの0時を保持）
-  const adjusted = new Date(
-    Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate())
-  );
+  //JSTの0時を作る
+  jstNow.setHours(0, 0, 0, 0);
 
-  return adjusted;
+  return jstNow; //jst基準のDateオブジェクト
+}
+
+// JST基準で日付文字列を返す
+export function formatDateJST(date: Date) {
+  return `${date.getFullYear()}-${(date.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
 }
 
 //平日/休日判定

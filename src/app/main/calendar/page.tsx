@@ -209,7 +209,7 @@ export default function CalendarWithPlansAndNotes() {
           </div>
 
           {/* 右側: 入力フォームと予定追加ボタン */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-row sm:flex-col gap-4">
             <div className="flex flex-col items-center">
               {/* 学習時間ボタン */}
               <Button
