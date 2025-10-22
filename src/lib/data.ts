@@ -43,20 +43,14 @@ export async function rolloverProgress(
         }
       : getTodayInfo(rolloverHour);
 
+  console.log("📅 今日の日付情報 (rollover基準)", todayFormatted);
+
   // 昨日を計算(rollover基準)
   const yesterdayAdjusted = new Date(todayAdjusted);
   yesterdayAdjusted.setDate(yesterdayAdjusted.getDate() - 1);
 
   // JSTのままformatDateに渡す
   const yesterdayFormatted = formatDate(yesterdayAdjusted);
-
-  console.log("📅 rolloverProgress 日付情報", {
-    nowUTC: new Date().toISOString(),
-    todayAdjusted: todayAdjusted.toISOString(),
-    todayFormatted,
-    yesterdayAdjusted: yesterdayAdjusted.toISOString(),
-    yesterdayFormatted,
-  });
 
   console.log("🧭 rolloverProgress クエリ確認", {
     targetAdjustedDate: yesterdayFormatted,
@@ -70,12 +64,13 @@ export async function rolloverProgress(
     ).data,
   });
 
-  //昨日のprogressを取得
+  //過去のprogressを取得
   const { data: oldProgress, error: progressError } = await supabase
     .from("todo_progress")
     .select("id, template_id, is_done, adjusted_date, todo_templates(title)")
     .eq("user_id", userId)
-    .eq("adjusted_date", yesterdayFormatted) //jst,rollover考慮した日付と一致するもの
+    .eq("adjusted_date", todayFormatted) //jstで今日より前
+    .order("adjusted_date", { ascending: true }) //古い順
     .overrideTypes<ProgressRow[]>();
 
   if (progressError) {
@@ -84,7 +79,7 @@ export async function rolloverProgress(
   }
 
   if (!oldProgress || oldProgress.length === 0) {
-    console.log("昨日のtodo_progressはありません");
+    console.log("過去のtodo_progressはありません");
     return;
   }
 
@@ -92,6 +87,10 @@ export async function rolloverProgress(
     count: oldProgress.length,
     unfinished: oldProgress.filter((p) => !p.is_done).length,
   });
+
+  //古いprogressの日付
+  const targetDate = oldProgress[0].adjusted_date;
+  console.log("📅 処理対象のprogressの日付:", targetDate);
 
   //  未完了だけ抽出→当日のrecordsに追加
   if (oldProgress && oldProgress.length > 0) {
@@ -102,7 +101,7 @@ export async function rolloverProgress(
         template_id: p.template_id,
         is_done: false,
         title: p.todo_templates?.title ?? "",
-        date: yesterdayFormatted, //JST＋rollover考慮済みの「昨日」として記録、UTCズレ防止
+        date: targetDate, //JST＋rollover考慮済みの「progress作成日」として記録
       }));
 
       console.log("🟡 未完了タスク挿入予定:", insertRows.length);
@@ -127,7 +126,7 @@ export async function rolloverProgress(
         .from("todo_progress")
         .delete()
         .eq("user_id", userId)
-        .lt("adjusted_date", todayFormatted); //jst
+        .lt("adjusted_date", targetDate); //jst
 
       if (deleteError) {
         console.error("Failed to delete old progress:", deleteError);
