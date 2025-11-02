@@ -24,19 +24,15 @@ export function getAdjustedDateObj(dayRolloverHour: number): Date {
   // JST時間を計算 (+9h)
   const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
-  // 🔍 JST時間でrollover判定
-  const hourJST = jstNow.getHours();
-
   // rollover 時刻前なら「前日」を返す
-  const adjustedDate = new Date(jstNow);
-  if (hourJST < rollover) {
+  if (jstNow.getHours() < rollover) {
     jstNow.setDate(jstNow.getDate() - 1);
   }
 
   //JSTの0時を作る
-  adjustedDate.setHours(0, 0, 0, 0);
+  jstNow.setHours(0, 0, 0, 0);
 
-  return adjustedDate; //jst基準のDateオブジェクト
+  return jstNow; //jst基準のDateオブジェクト
 }
 
 // JST基準で日付文字列を返す
