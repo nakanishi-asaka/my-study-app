@@ -120,8 +120,15 @@ export default function ProfilePage() {
           .getPublicUrl(filePath);
 
         url = `${urlData.publicUrl}?t=${Date.now()}`;
-        setAvatarUrl(url);
-        setAvatarPreview(url);
+      }
+
+      if (!avatarFile && !avatarUrl) {
+        // 古いアバターが存在していた場合のみ削除
+        const oldPath = avatarUrl?.split("/").slice(-2).join("/");
+        if (oldPath) {
+          await supabase.storage.from("avatar_url").remove([oldPath]);
+        }
+        url = null;
       }
 
       //dbに保存
@@ -152,20 +159,8 @@ export default function ProfilePage() {
   async function handleRemoveAvatar() {
     setAvatarFile(null);
     setAvatarPreview(null);
+    setAvatarUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-
-    // 既存アバター削除（任意：必要な場合のみ）
-    if (userId && avatarUrl) {
-      try {
-        const path = avatarUrl.split("/").slice(-2).join("/"); // userId/avatar.png など
-        await supabase.storage.from("avatar_url").remove([path]);
-        setAvatarUrl(null);
-        setAvatarPreview(null);
-        setAvatarFile(null);
-      } catch (err) {
-        console.warn("アバター削除エラー:", err);
-      }
-    }
   }
 
   const isValidUsername = username.trim().length >= 2;
