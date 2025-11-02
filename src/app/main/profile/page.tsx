@@ -64,7 +64,9 @@ export default function ProfilePage() {
     if (!avatarFile) return;
     const url = URL.createObjectURL(avatarFile);
     setAvatarPreview(url);
-    return () => URL.revokeObjectURL(url);
+    return () => {
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    };
   }, [avatarFile]);
 
   //アバター選択
@@ -127,7 +129,7 @@ export default function ProfilePage() {
           id: userId, // user.id = auth.users のUUID
           username,
           exam_date: examDate,
-          avatar_url: avatarUrl,
+          avatar_url: url,
           day_rollover_hour: dayRolloverHour,
           updated_at: new Date().toISOString(),
         },
