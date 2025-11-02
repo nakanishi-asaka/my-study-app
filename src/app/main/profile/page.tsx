@@ -119,8 +119,9 @@ export default function ProfilePage() {
           .from("avatar_url")
           .getPublicUrl(filePath);
 
-        url = urlData.publicUrl;
+        url = `${urlData.publicUrl}?t=${Date.now()}`;
         setAvatarUrl(url);
+        setAvatarPreview(url);
       }
 
       //dbに保存
@@ -159,6 +160,8 @@ export default function ProfilePage() {
         const path = avatarUrl.split("/").slice(-2).join("/"); // userId/avatar.png など
         await supabase.storage.from("avatar_url").remove([path]);
         setAvatarUrl(null);
+        setAvatarPreview(null);
+        setAvatarFile(null);
       } catch (err) {
         console.warn("アバター削除エラー:", err);
       }
