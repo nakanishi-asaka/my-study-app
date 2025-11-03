@@ -10,6 +10,7 @@ export default function ProfilePage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null); //プレビュー用
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null); //保存済みurl
+  const [avatarToDelete, setAvatarToDelete] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null); // ← ファイル関連エラー
@@ -122,13 +123,11 @@ export default function ProfilePage() {
         url = `${urlData.publicUrl}?t=${Date.now()}`;
       }
 
-      if (!avatarFile && !avatarUrl) {
-        // 古いアバターが存在していた場合のみ削除
-        const oldPath = avatarUrl?.split("/").slice(-2).join("/");
-        if (oldPath) {
-          await supabase.storage.from("avatar_url").remove([oldPath]);
-        }
-        url = null;
+      // 削除予定がある場合は storage から削除
+      if (avatarToDelete) {
+        const oldPath = avatarToDelete.split("/").slice(-2).join("/");
+        await supabase.storage.from("avatar_url").remove([oldPath]);
+        if (!avatarFile) url = null; // 新しい画像がない場合のみ null にする
       }
 
       //dbに保存
@@ -146,6 +145,8 @@ export default function ProfilePage() {
 
       if (error) throw error;
 
+      setAvatarToDelete(null);
+      setAvatarUrl(url);
       setMessage("プロフィールを保存しました！");
     } catch (e: any) {
       console.error("保存エラー:", e);
@@ -157,9 +158,11 @@ export default function ProfilePage() {
 
   //アバター削除(プレビュー消す＆選択ファイルをリセット)
   async function handleRemoveAvatar() {
+    if (avatarUrl) {
+      setAvatarToDelete(avatarUrl);
+    }
     setAvatarFile(null);
     setAvatarPreview(null);
-    setAvatarUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 

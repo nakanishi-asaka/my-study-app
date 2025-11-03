@@ -219,7 +219,7 @@ export default function CalendarWithPlansAndNotes() {
                 <Plus size={22} />
                 <span className="hidden sm:inline ml-1">学習時間を入力</span>
               </Button>
-              <span className="text-xs mt-1 sm:hidden text-gray-600">学習</span>
+              <span className="text-xs mt-1 sm:hidden text-gray-600">時間</span>
             </div>
 
             {/* 予定追加ボタン */}
@@ -329,7 +329,7 @@ export default function CalendarWithPlansAndNotes() {
                           {format(day, "d")}
                         </span>
                         {dailyStudy[key] && (
-                          <span className="text-green-600 font-medium text-[15px]">
+                          <span className="text-green-600 font-medium text-[13px]">
                             {Math.floor(dailyStudy[key] / 60)}h{" "}
                             {dailyStudy[key] % 60}m
                           </span>
@@ -416,23 +416,26 @@ export default function CalendarWithPlansAndNotes() {
                   });
 
                   return positionedBars.map(
-                    ({ plan, startIndex, endIndex, bottomOffset }, i) => (
-                      <div
-                        key={i}
-                        onClick={() => openEditPlanModal(plan)}
-                        className={`${plan.color} bg-opacity-70 h-5 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
-                        style={{
-                          gridColumnStart: startIndex + 1,
-                          gridColumnEnd: endIndex + 2,
-                          position: "absolute",
-                          left: 0,
-                          right: 0,
-                          bottom: `${bottomOffset}px`,
-                        }}
-                      >
-                        {plan.title}
-                      </div>
-                    )
+                    ({ plan, startIndex, endIndex, bottomOffset }, i) => {
+                      const isFirstWeekOfPlan = plan.start >= weekStart;
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => openEditPlanModal(plan)}
+                          className={`${plan.color} bg-opacity-70 h-5 rounded-md text-xs text-white flex items-center px-1 cursor-pointer pointer-events-auto`}
+                          style={{
+                            gridColumnStart: startIndex + 1,
+                            gridColumnEnd: endIndex + 2,
+                            position: "absolute",
+                            left: 0,
+                            right: 0,
+                            bottom: `${bottomOffset}px`,
+                          }}
+                        >
+                          {isFirstWeekOfPlan ? plan.title : ""}
+                        </div>
+                      );
+                    }
                   );
                 })()}
               </div>
