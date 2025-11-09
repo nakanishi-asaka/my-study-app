@@ -2,7 +2,7 @@
 公開URL  
 - https://preeminent-starlight-401e9e.netlify.app/
 
-デモアカウント (固定のアカウントを用意しています↓)
+デモアカウント (固定のアカウントを用意していますが、メール＋パスワードでの登録も可能です)
 - メールアドレス：test@example.com  
 - パスワード：123456pass
 
