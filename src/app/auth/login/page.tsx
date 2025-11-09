@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../supabaseClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -10,6 +11,7 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   // ログイン
   const handleSignIn = async (e: any) => {
@@ -25,11 +27,24 @@ export default function LoginPage() {
 
       if (error) throw error;
 
-      setMessage("ログイン成功!");
       console.log("ログイン成功:", data);
-      router.push("/"); // ホームへリダイレクト
+
+      //ログイン成功
+      toast({
+        title: "ログイン成功！",
+      });
+
+      //少し待ってからトップページへ
+      setTimeout(() => {
+        router.push("/");
+      }, 1000);
     } catch (error: any) {
-      setMessage("ログイン失敗: " + error.message);
+      toast({
+        variant: "destructive",
+        title: "ログイン失敗",
+        description:
+          error.message || "メールアドレスまたはパスワードを確認してください。",
+      });
     } finally {
       setLoading(false);
     }

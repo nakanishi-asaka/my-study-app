@@ -3,27 +3,52 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/app/supabaseClient";
+import { supabase } from "../../supabaseClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConf, setPasswordConf] = useState("");
+  const { toast } = useToast();
 
   // フォーム送信時の処理
   const onSubmit = async (e: any) => {
     e.preventDefault();
+
+    //パスワード一致してるかチェック
+    if (password !== passwordConf) {
+      toast({
+        title: "エラー",
+        description: "パスワードが一致しません",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const { error: signUpError } = await supabase.auth.signUp({
         email: email,
         password: password,
       });
-      if (signUpError) {
-        throw signUpError;
-      }
-      alert("登録完了メールを確認してください");
-    } catch (error) {
-      alert("エラーが発生しました");
+      if (signUpError) throw signUpError;
+
+      toast({
+        title: "登録成功！",
+        description: "登録完了メールを確認してください",
+      });
+      // フォームリセット
+      setEmail("");
+      setPassword("");
+      setPasswordConf("");
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "登録中にエラーが発生しました";
+      toast({
+        title: "エラー",
+        description: message || "登録中にエラーが発生しました",
+        variant: "destructive",
+      });
     }
   };
 
@@ -78,6 +103,13 @@ export default function SignupPage() {
               onChange={(e) => setPasswordConf(e.target.value)}
               required
             />
+
+            {/* 一致してないときリアルタイムで赤文字表示 */}
+            {passwordConf && password !== passwordConf && (
+              <p className="text-sm text-red-600 mt-1">
+                パスワードが一致しません
+              </p>
+            )}
           </div>
 
           {/* 登録ボタン */}

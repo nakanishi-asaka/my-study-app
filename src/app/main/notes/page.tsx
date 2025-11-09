@@ -173,6 +173,7 @@ export default function NotesPage() {
     }
 
     let imageUrl = "";
+    let imageSignedUrl: string | undefined = undefined;
 
     // 画像アップロード処理
     if (newRecord.type === "image" && newRecord.image_url instanceof File) {
@@ -184,6 +185,7 @@ export default function NotesPage() {
         .replace(/[^\w.-]/g, ""); // 日本語や記号を除去
       const filePath = `${session.user.id}/${Date.now()}-${safeFileName}`;
 
+      //ファイルをアップロード
       const { error: uploadError } = await supabase.storage
         .from("record_images") // ← ストレージバケット名（作成しておく）
         .upload(filePath, file);
@@ -194,6 +196,17 @@ export default function NotesPage() {
       }
 
       imageUrl = filePath;
+
+      // signed URL を生成
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from("record_images")
+        .createSignedUrl(filePath, 60 * 60); // 1時間有効
+
+      if (urlError) {
+        console.warn("Signed URL generation failed:", urlError.message);
+      } else {
+        imageSignedUrl = urlData.signedUrl;
+      }
     }
 
     const { data, error } = await supabase
@@ -217,7 +230,13 @@ export default function NotesPage() {
       return;
     }
     // 成功したら state に追加
-    setRecords([data as StudyRecord, ...records]);
+    setRecords([
+      {
+        ...(data as StudyRecord),
+        image_signed_url: imageSignedUrl,
+      },
+      ...records,
+    ]);
 
     // フォームリセット
     setNewRecord({
