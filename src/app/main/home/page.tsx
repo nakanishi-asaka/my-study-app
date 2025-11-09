@@ -146,29 +146,30 @@ export default function HomePage() {
     const fetchStats = async () => {
       try {
         // 今週分(存在しない場合あり)
-        const { data: weekly, error } = await supabase
-          .from("weekly_summary")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (error) {
-          console.error("weekly_summary error:", error);
+        const { data: weekly, error: weeklyError } = await supabase.rpc(
+          "get_weekly_summary"
+        );
+        if (weeklyError) {
+          console.error("weekly_summary error:", weeklyError);
         }
 
         // 累計分
-        const { data: total } = await supabase
-          .from("total_summary")
-          .select("*")
-          .eq("user_id", user.id)
-          .single();
+        const { data: total, error: totalError } = await supabase.rpc(
+          "get_total_summary"
+        );
+        if (totalError) {
+          console.error("get_total_summary error:", totalError);
+        }
+
+        const weeklyData = weekly?.[0];
+        const totalData = total?.[0];
 
         setStudyStats({
-          weekly_hours: (weekly?.week_total_minutes ?? 0) / 60,
-          streak_days: total?.current_streak_days ?? 0, // ← ✅ streak 日数を格納
-          total_completed: total?.total_completed_todos ?? 0,
-          weekday_minutes: (total?.weekday_minutes ?? 0) / 60,
-          weekend_minutes: (total?.weekend_minutes ?? 0) / 60,
+          weekly_hours: (weeklyData?.week_total_minutes ?? 0) / 60,
+          streak_days: totalData?.current_streak_days ?? 0, // ← ✅ streak 日数を格納
+          total_completed: totalData?.total_completed_todos ?? 0,
+          weekday_minutes: (totalData?.weekday_minutes ?? 0) / 60,
+          weekend_minutes: (totalData?.weekend_minutes ?? 0) / 60,
         });
       } catch (err) {
         console.error("fetchStats error:", err);

@@ -18,21 +18,18 @@ export function getTodayInfo(rolloverHour: number): TodayInfo {
 
 // getAdjustedDate を Date オブジェクトで返す
 export function getAdjustedDateObj(dayRolloverHour: number): Date {
-  const now = new Date();
+  const now = new Date(); //既にjst時間
   const rollover = typeof dayRolloverHour === "number" ? dayRolloverHour : 3;
 
-  // JST時間を計算 (+9h)
-  const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-
   // rollover 時刻前なら「前日」を返す
-  if (jstNow.getHours() < rollover) {
-    jstNow.setDate(jstNow.getDate() - 1);
+  if (now.getHours() < rollover) {
+    now.setDate(now.getDate() - 1);
   }
 
   //JSTの0時を作る
-  jstNow.setHours(0, 0, 0, 0);
+  now.setHours(0, 0, 0, 0);
 
-  return jstNow; //jst基準のDateオブジェクト
+  return now; //jst基準のDateオブジェクト
 }
 
 // JST基準で日付文字列を返す
